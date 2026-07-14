@@ -208,3 +208,43 @@ the one check I genuinely could not perform here.
 ## In-depth UI audit: is every designed element actually functional?
 
 This was checked two ways, not just by reading the code:
+
+**1. Static wiring cross-check.** Every `id="..."` in `index.html` was
+diffed against every `getElementById(...)` call in `app.js` (and vice
+versa). Result: no orphaned buttons, forms, or display elements — every
+control that exists has a real event listener behind it, and every
+listener targets a real element.
+
+**2. Real browser simulation (`frontend/dom_test.js`).** Static wiring
+checks can't catch "the button is wired up but does the wrong thing" or
+"the display renders but shows stale/fake data." So I loaded the *actual*
+`index.html` + `app.js` files into jsdom (a real DOM implementation, not a
+mock), pointed them at a live backend, and drove it exactly like a user
+would: filled in each form's real input fields, dispatched real `submit`
+events, clicked the real "Refresh Trials" button, and read back what
+actually landed in the live DOM afterward. All 4 forms + the dashboard +
+the health indicator were verified this way — **10/10 checks passed**,
+confirming the register/submit/appeal/whistleblower forms all round-trip
+through the real backend and the dashboard re-renders with real data,
+not placeholders.
+
+**3. Adversarial check — and this one caught a real bug.** The DOM test
+also registers a trial whose `trial_id` is literally
+`EVIL<img src=x onerror=alert(1)>` and checks whether that tag lands as
+*executable markup* in the live dashboard. First run: **it did** — every
+piece of dynamic data (trial IDs, statuses, flag descriptions, etc.) was
+being inserted into the table via `innerHTML` template literals with no
+escaping. That's a real HTML-injection bug: anyone able to register a
+trial or get results published under a crafted ID/hypothesis/flag text
+could break the dashboard's rendering or run arbitrary script in another
+user's browser.
+
+Fixed: added an `escapeHtml()` helper in `app.js` and applied it to every
+dynamic value written into the table (trial ID, status, score, verdict,
+bond, flag type/severity/description, verdict CSS class, error messages).
+Re-ran the same adversarial DOM test after the fix — **10/10 passed**,
+and the `<img onerror>` payload no longer appears in the live DOM at all
+(it now renders as inert text).
+
+Also fixed while auditing: `verdict-concerns` and `verdict-none` row
+classes were referenced in `app.js` but had no matching CSS, so trials in
