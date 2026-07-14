@@ -58,3 +58,53 @@ written:
    - A cross-origin `POST /api/register_trial` succeeds and returns the
      protocol snapshot
    - A cross-origin `POST /api/submit_results` against the Theranos
+     fixture returns `integrity_score: 18`, `verdict: suspected_fraud`,
+     `confidence: high`, with `outcome_switching` and
+     `sample_size_discrepancy` flagged as critical
+   - Both static frontend files (`index.html`, `app.js`) serve with `200`
+
+## Deeper logic/implementation audit (this pass)
+
+Five more real bugs, found by tracing state transitions and firing actual
+concurrent/adversarial calls rather than just re-reading the code:
+
+1. **Terminal-state bond bug (the most serious one found so far).**
+   Reproduced directly: register a trial → get it flagged as
+   `suspected_fraud` → `resolve_appeal(confirm_fraud)` (bond slashed,
+   `status: resolved_fraud`) → submit **another** results report against
+   the same `trial_id`. Before the fix, this silently flipped `status`
+   back to `"flagged"` and reopened `appeal_window_open`, even though the
+   bond was already permanently slashed. If a regulator then dismissed
+   that reopened appeal, `bond_status` would have flipped to `"released"`
+   despite already being `"slashed"` — a real financial state-consistency
+   bug. Fixed: `submit_results` now rejects any further submission once a
+   trial has reached a terminal state (`resolved_fraud` / `resolved_clean`).
+   Confirmed fixed with a test that reproduces the exact sequence above
+   and asserts the second submission is rejected and the bond state is
+   untouched.
+
+2. **Dead fixture code that overstated test coverage.** The mock fixtures
+   included `"...?current=true"` variants meant to represent a registry
+   that had been silently amended between registration and submission —
+   but `submit_results()` always re-fetches the *exact same URL string*
+   stored at registration (correct behavior for the real contract; the
+   same live URL can return different content at two points in time on
+   GenLayer). Since the mock fetcher is a pure function of the URL
+   string, those fixtures were never actually reachable — the
+   "undisclosed protocol amendment via registry drift" scenario was never
+   really exercised end-to-end, despite fixtures implying it was. I
+   considered making the fetcher stateful (return the amended fixture on
+   a URL's second visit) but rejected that: several tests intentionally
+   reuse the same two scenario URLs for unrelated edge cases, so
+   per-URL state would leak across tests and silently corrupt *other*
+   tests' "registration-time" snapshots — confirmed this would happen by
+   tracing exactly which tests share which URLs. Fixed by removing the
+   dead fixtures and documenting the limitation directly in
+   `mock_fetcher.py`'s docstring, and correcting the `undisclosed_amendment`
+   flag that the mock LLM was hard-coding into the Theranos scenario's
+   result (it no longer reflects anything the mock actually "detected").
+
+3. **Inconsistent 404 handling.** `list_flags_for_trial` had no
+   existence check at all, unlike every other per-trial lookup
+   (`get_trial`, `get_report`, `list_reports_for_trial`).
+   `GET /api/trial/DOES-NOT-EXIST/flags` silently returned `200 {}`
