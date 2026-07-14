@@ -368,3 +368,44 @@ thing is a one-line change (see `genlayer_adapter.py`).
 
 1. Verify the deploy adapter before every deploy:
    ```bash
+   python3 -m py_compile contract/genlayer_adapter.py
+   ```
+2. If the GenLayer tools are installed, run the schema check:
+   ```bash
+   genvm-lint schema contract/genlayer_adapter.py
+   ```
+3. Deploy only `contract/genlayer_adapter.py` as the single-file
+   contract. The local `medichain_contract.py` remains the FastAPI test
+   implementation; the adapter is the deployable GenLayer contract.
+4. Use the Bradbury network:
+   ```bash
+   genlayer network set testnet-bradbury
+   genlayer deploy --contract contract/genlayer_adapter.py --args "$TREASURE_ADDRESS"
+   ```
+5. After deploy, always inspect the deploy receipt for execution success
+   before checking schema:
+   ```bash
+   genlayer receipt <txHash> --stdout --stderr
+   genlayer schema <contractAddress>
+   ```
+
+If schema is still unavailable after deploy, first check the deploy
+receipt. GenLayer can accept/finalize a transaction whose contract
+execution failed; in that case no contract exists yet, so schema lookup
+will fail until the deploy execution succeeds.
+
+## Running it yourself
+
+```bash
+pip install -r requirements.txt
+
+# backend
+cd backend && uvicorn main:app --reload --port 8000
+
+# frontend (separate terminal)
+cd frontend && python3 -m http.server 3000
+# open http://localhost:3000 in a browser, API base already points at :8000
+
+# tests (separate terminal)
+cd tests && pytest -v
+```
