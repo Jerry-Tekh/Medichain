@@ -328,3 +328,43 @@ Successful Bradbury deploy:
    description on hover) instead of just a whistleblower-flag count.
 4. **No input validation on registration.** Empty `trial_id`, empty
    `primary_endpoints`, zero/negative `expected_sample_size`, or
+   zero/negative `integrity_bond` were all previously accepted. Fixed at
+   both the pydantic layer (422) and the contract layer (defense in
+   depth, in case the contract is called directly rather than through the
+   API — which is exactly how it'll be called once on GenLayer, since
+   pydantic doesn't exist there).
+5. **`decision` field in `resolve_appeal` accepted any string**, only
+   validated at the contract layer. Now typed as
+   `Literal["confirm_fraud", "dismiss"]` in the pydantic model too, so bad
+   input is rejected before it reaches contract logic.
+6. **No regression test for double-resolving an appeal.** Added
+   `test_resolve_appeal_twice_fails_second_time` to confirm the appeal
+   window actually closes after first resolution and can't be resolved
+   again.
+7. **No test that CORS actually works cross-origin**, only informal manual
+   curl checks in an earlier pass. Added a proper automated
+   `test_cors_headers_present_for_cross_origin_frontend`, and separately,
+   confirmed manually with two independent live processes (backend on
+   :8000, frontend on :3000) sending real `Origin`-header requests, not
+   just same-process test-client calls.
+
+### Full current test count: 23/23 passing
+
+Re-verified by extracting the actual shipped zip into a clean directory
+and running `pytest` from there (not just from the build directory), so
+what's in your hands is what was tested.
+
+## Honest limitation: the mock LLM
+
+`backend/mock_llm.py` is a **deterministic, keyword-based stand-in** for
+`gl.exec_prompt()`. It exists only so the wiring (contract logic ↔ API ↔
+frontend) can be tested reproducibly without network access or API keys.
+It is not a real integrity analysis engine — real LLM validators reading
+arbitrary trial documents and reasoning about outcome switching, p-hacking,
+etc. is what `gl.exec_prompt()` does on GenLayer. Swapping it for the real
+thing is a one-line change (see `genlayer_adapter.py`).
+
+## Deploying to GenLayer Bradbury
+
+1. Verify the deploy adapter before every deploy:
+   ```bash
