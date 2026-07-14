@@ -248,3 +248,43 @@ and the `<img onerror>` payload no longer appears in the live DOM at all
 
 Also fixed while auditing: `verdict-concerns` and `verdict-none` row
 classes were referenced in `app.js` but had no matching CSS, so trials in
+those states rendered with no row highlighting at all. Added both.
+
+To re-run the DOM test yourself:
+```bash
+cd frontend
+npm install       # installs jsdom, the only dependency
+# in another terminal: cd ../backend && uvicorn main:app --port 8000
+node dom_test.js
+```
+
+## In-depth audit: what was found and fixed
+
+This section is a straight log of the audit, not marketing copy.
+
+### GenLayer Bradbury deployment corrections
+
+The deploy adapter at `contract/genlayer_adapter.py` is aligned with the
+current GenLayer Write Contract skill for Bradbury deployments:
+
+| Requirement | Current adapter |
+|---|---|
+| Pinned runner dependency | First line is `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` |
+| No rejected runner aliases | No `py-genlayer:test`, `py-genlayer:latest`, or unversioned runner alias |
+| Contract declaration | Uses `class MediChain(gl.Contract)` because the current Bradbury runner reports `gl.contract` is unavailable |
+| Storage shape | Uses `TreeMap` fields with primitive values; nested arrays/objects are stored as JSON strings |
+| Sponsor addresses | Stored as strings because Bradbury rejects `TreeMap[str, Address]` value storage |
+| Integer storage | Uses `bigint` or `u256`, not plain `int`, for stored numeric fields |
+| Storage initialization | Leaves annotated `TreeMap` fields to Bradbury's storage initializer; no `TreeMap()` or `TreeMap[str, ...]()` assignments in `__init__` |
+| Money type | `integrity_bond` and the bond storage map use `u256` |
+| Treasury address | Constructor accepts the deploy-time `TREASURE_ADDRESS` |
+| LLM/web consensus | Web/LLM analysis is isolated inside an equivalence-principle closure and validated defensively |
+
+This specifically fixes the Bradbury-side "cannot get contract schema"
+failure caused by the old `py-genlayer:test` runner header, schema-hostile
+`TreeMap[str, dict]` state, plain `int` storage, and constructor-level
+`TreeMap[str, ...]()` assignments.
+
+Live Bradbury verification from this workspace:
+
+```bash
