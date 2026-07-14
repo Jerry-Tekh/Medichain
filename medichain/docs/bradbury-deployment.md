@@ -86,3 +86,12 @@ The schema call returned constructor parameter `treasury_address` and all public
 view/write methods, including `register_trial`, `submit_results`,
 `resolve_appeal`, `submit_flag`, `list_trials`, and `get_treasury_address`.
 
+## Read Verification
+
+```bash
+npx -y genlayer@0.39.2 call \
+  0x9c6D4d30F89f8701C8a4E63902880D52C5269523 \
+  get_treasury_address
+```
+
+The read call completed successfully against the deployed Bradbury contract.
