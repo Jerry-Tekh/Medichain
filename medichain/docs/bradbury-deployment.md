@@ -58,3 +58,18 @@ The standalone check verifies the pinned runner, the `gl.Contract` class,
 schema-safe storage annotations, and absence of constructor-level `TreeMap`
 assignments.
 
+## Deploy Command
+
+The successful Bradbury deploy used explicit fee/timeunit allocation:
+
+```bash
+set -a
+. ./.env.local
+set +a
+
+npx -y genlayer@0.39.2 deploy \
+  --contract medichain/contract/genlayer_adapter.py \
+  --args "$TREASURE_ADDRESS" \
+  --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
+```
+
