@@ -43,3 +43,18 @@ commands used from this workspace.
 7. Leave annotated `TreeMap` fields to Bradbury storage initialization.
 
 ## Local Verification
+
+Run these checks before deploy:
+
+```bash
+python3 medichain/scripts/check_genlayer_adapter.py
+python3 -m py_compile \
+  medichain/contract/genlayer_adapter.py \
+  medichain/scripts/check_genlayer_adapter.py \
+  medichain/tests/test_integration.py
+```
+
+The standalone check verifies the pinned runner, the `gl.Contract` class,
+schema-safe storage annotations, and absence of constructor-level `TreeMap`
+assignments.
+
