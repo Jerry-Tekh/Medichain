@@ -108,3 +108,53 @@ concurrent/adversarial calls rather than just re-reading the code:
    existence check at all, unlike every other per-trial lookup
    (`get_trial`, `get_report`, `list_reports_for_trial`).
    `GET /api/trial/DOES-NOT-EXIST/flags` silently returned `200 {}`
+   while the structurally identical `/reports` endpoint correctly
+   returned `404` for the exact same nonexistent trial — confirmed with
+   a side-by-side curl comparison before fixing. A client had no way to
+   distinguish "this trial has zero flags" from "this trial doesn't
+   exist." Fixed in both the local contract and the GenLayer adapter.
+
+4. **Missing input validation**: `submit_results` accepted an empty
+   `publication_url` with no check, and `submit_flag` accepted empty
+   `submitter`/`description` strings with no check. Both fixed with the
+   same "not empty" validation pattern already used for `trial_id`.
+
+5. **Frontend race condition.** `refreshTrials()` is triggered from
+   several places (page load, every form submit, the Refresh button, the
+   Details toggle) and does multiple awaited fetches per trial inside its
+   loop. If two calls overlap — e.g. the page-load auto-refresh is still
+   in flight when a user clicks something — both calls clear and rebuild
+   the table concurrently. Reproduced directly: firing 3 overlapping
+   `refreshTrials()` calls against a 2-trial backend produced **6 rows**
+   instead of 2. Fixed with a generation-token guard (each call captures
+   a token and bails out before touching the DOM if a newer call has
+   since started); re-ran the identical reproduction after the fix and
+   got exactly 2 rows. This is now a permanent regression check in
+   `dom_test.js` (17/17 checks passing).
+
+All of the above were found by actually running code (direct
+reproduction scripts, not just reasoning about it) and are now covered
+by permanent regression tests — 27/27 in `pytest`, 17/17 in the DOM
+click-through suite.
+
+## Follow-up pass: report detail view + full responsive design
+
+**Gap found:** even after adding flag badges to the dashboard, there was
+still no way to read a report's actual `summary` text, its `confidence`,
+which `publication_url` it came from, or to see more than the single
+latest report if a trial had multiple submissions — the backend already
+supported all of this (`/api/trial/{id}/reports`) but nothing in the UI
+surfaced it. Same for whistleblower flags: only a count was shown, never
+the submitter/description/evidence. Fixed by adding a per-row **Details**
+toggle that expands to show full report history and whistleblower flag
+detail, all through `escapeHtml()` like everything else on the dashboard.
+Verified with 3 new DOM checks (16/16 total now) that actually click the
+button, read the expanded row's real text content, and click again to
+confirm it collapses.
+
+**Responsive design audit.** The layout previously wasn't actually
+responsive despite having a viewport meta tag — a few concrete bugs:
+
+- `.api-config` (the API-base bar in the header) was a non-wrapping flex
+  row with a **fixed 220px input**. On a narrow phone, "API base:" text +
+  220px input + status dot together exceed the viewport width, forcing
