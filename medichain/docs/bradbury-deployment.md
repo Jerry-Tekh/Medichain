@@ -28,3 +28,18 @@ commands used from this workspace.
 5. The constructor assigned `TreeMap[str, ...]()` values, which Bradbury rejected at runtime.
 
 ## Adapter Rules
+
+1. The first line must pin the runner:
+
+   ```python
+   # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+   ```
+
+2. Do not use `py-genlayer:test`, `py-genlayer:latest`, or unversioned `py-genlayer`.
+3. Use `class MediChain(gl.Contract)` for the current Bradbury runner.
+4. Store structured arrays/objects as JSON strings inside primitive `TreeMap` values.
+5. Use `bigint` or sized integers for persisted numeric fields.
+6. Use `u256` for money-like values such as integrity bonds.
+7. Leave annotated `TreeMap` fields to Bradbury storage initialization.
+
+## Local Verification
