@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MediChain — Clinical Trial Integrity</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>MediChain</h1>
+    <p class="tagline">Decentralised clinical trial data integrity</p>
+    <div class="api-config">
+      API base: <input id="apiBase" value="http://localhost:8000" />
+      <span id="healthDot" class="dot dot-unknown" title="backend health"></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. Register Trial</h2>
+      <form id="registerForm">
+        <label>Trial ID <input name="trial_id" required placeholder="THERANOS-001" /></label>
+        <label>ClinicalTrials.gov URL <input name="clinicaltrials_gov_url" required placeholder="https://clinicaltrials.gov/study/THERANOS-001" /></label>
+        <label>Primary Hypothesis <input name="primary_hypothesis" required /></label>
+        <label>Primary Endpoints (comma-separated) <input name="primary_endpoints" required /></label>
+        <label>Expected Sample Size <input name="expected_sample_size" type="number" required /></label>
+        <label>Sponsor Wallet <input name="sponsor_wallet" required placeholder="0xSponsor..." /></label>
+        <label>Integrity Bond (GEN) <input name="integrity_bond" type="number" required /></label>
+        <button type="submit">Register Trial</button>
+      </form>
+      <pre class="output" id="registerOutput"></pre>
+    </section>
+
+    <section class="card">
+      <h2>2. Submit Results</h2>
+      <form id="submitForm">
+        <label>Trial ID <input name="trial_id" required /></label>
+        <label>Report ID <input name="report_id" required placeholder="report-001" /></label>
+        <label>Publication URL <input name="publication_url" required /></label>
+        <label>Preprint URL (optional) <input name="preprint_url" /></label>
+        <button type="submit">Submit Results for Analysis</button>
+      </form>
+      <pre class="output" id="submitOutput"></pre>
+    </section>
+
+    <section class="card">
+      <h2>3. Resolve Appeal</h2>
+      <form id="appealForm">
+        <label>Trial ID <input name="trial_id" required /></label>
+        <label>Decision
+          <select name="decision">
+            <option value="dismiss">Dismiss (release bond)</option>
+            <option value="confirm_fraud">Confirm fraud (slash bond)</option>
+          </select>
+        </label>
+        <label>Resolver <input name="resolver" required placeholder="regulator-0x..." /></label>
+        <button type="submit">Resolve Appeal</button>
+      </form>
+      <pre class="output" id="appealOutput"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Whistleblower Flag</h2>
+      <form id="flagForm">
+        <label>Trial ID <input name="trial_id" required /></label>
+        <label>Submitter (anonymous handle ok) <input name="submitter" required /></label>
+        <label>Description <textarea name="description" required></textarea></label>
+        <label>Evidence URL (optional) <input name="evidence_url" /></label>
+        <button type="submit">Submit Flag</button>
+      </form>
+      <pre class="output" id="flagOutput"></pre>
+    </section>
+
+    <section class="card wide">
+      <h2>Integrity Dashboard</h2>
+      <button id="refreshBtn">Refresh Trials</button>
+      <div class="table-scroll">
+        <table id="trialsTable">
+          <thead>
+            <tr>
+              <th>Trial ID</th><th>Status</th><th>Score</th><th>Verdict</th><th>Bond</th><th>Integrity Flags</th><th>Whistleblower Flags</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
