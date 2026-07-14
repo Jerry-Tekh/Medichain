@@ -288,3 +288,43 @@ failure caused by the old `py-genlayer:test` runner header, schema-hostile
 Live Bradbury verification from this workspace:
 
 ```bash
+npx -y genlayer@0.39.2 deploy \
+  --contract medichain/contract/genlayer_adapter.py \
+  --args "$TREASURE_ADDRESS" \
+  --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
+
+npx -y genlayer@0.39.2 schema 0x9c6D4d30F89f8701C8a4E63902880D52C5269523
+npx -y genlayer@0.39.2 call 0x9c6D4d30F89f8701C8a4E63902880D52C5269523 get_treasury_address
+```
+
+Successful Bradbury deploy:
+
+- Transaction: `0xff12089804b1773c0858495e194e8b206c32b4e69e4ffe0ad2c37eb4adc0d18f`
+- Contract: `0x9c6D4d30F89f8701C8a4E63902880D52C5269523`
+- Receipt result: `ACCEPTED`, `AGREE`, `FINISHED_WITH_RETURN`
+- Schema: retrieved successfully
+- `get_treasury_address`: read successfully
+
+### Application-level bugs found and fixed
+
+1. **Duplicate `report_id` silently overwrote prior reports.** Fixed:
+   `submit_results` now rejects a `report_id` that's already in use
+   (400/`IntegrityCheckError`), matching the duplicate-check already in
+   place for `trial_id` at registration. Covered by
+   `test_duplicate_report_id_rejected`.
+2. **LLM-result validation was shallow.** It checked that the top-level
+   JSON keys existed, but never checked `integrity_score` was numeric and
+   in range, or that each flag object had valid `type`/`severity` enum
+   values. Fine for the deterministic mock, but a real LLM validator can
+   return malformed data. Fixed with full schema + range validation in
+   `_validate_llm_result`.
+3. **Missing dashboard feature** — the spec explicitly requires an
+   "Integrity dashboard (score + flags per trial)," but there was no way
+   to list a trial's integrity reports (and therefore its flags) at all;
+   the trial record only ever stored the *latest* score/verdict. Added
+   `list_reports_for_trial()` to the contract, a new
+   `GET /api/trial/{id}/reports` endpoint, and updated the frontend
+   dashboard to actually render flag badges (type + severity, with
+   description on hover) instead of just a whistleblower-flag count.
+4. **No input validation on registration.** Empty `trial_id`, empty
+   `primary_endpoints`, zero/negative `expected_sample_size`, or
