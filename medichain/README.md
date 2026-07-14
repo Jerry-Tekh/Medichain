@@ -158,3 +158,53 @@ responsive despite having a viewport meta tag — a few concrete bugs:
 - `.api-config` (the API-base bar in the header) was a non-wrapping flex
   row with a **fixed 220px input**. On a narrow phone, "API base:" text +
   220px input + status dot together exceed the viewport width, forcing
+  horizontal overflow of the *header itself*. Fixed: `flex-wrap: wrap`
+  plus a flexible `flex: 1 1 160px` input that shrinks instead of
+  overflowing.
+- The 8-column trials table had **no scroll container**. On a phone, a
+  table that wide would force the *entire page* into horizontal scroll,
+  not just the table. Fixed: wrapped it in `.table-scroll` with
+  `overflow-x: auto`, so only the table itself scrolls, contained within
+  its card — the standard responsive pattern for wide data tables.
+- The media query rules were originally placed *before* some later
+  plain (non-media) rules in the same file. Because CSS resolves
+  same-specificity conflicts by **source order**, not by whether a rule
+  sits inside `@media`, a later plain `table { font-size: 0.85rem }`
+  would have silently beaten an earlier `@media (max-width:700px) {
+  table { font-size: 0.78rem } }` on every phone-sized screen — the
+  responsive rule would never actually apply. Fixed by moving all
+  `@media` blocks to the very end of the stylesheet, and verified there's
+  no rule after them that could re-win the cascade.
+- `main`'s grid used `minmax(320px, 1fr)`, which can't shrink a card
+  below 320px — on a 320px-wide phone (iPhone SE and similar) that leaves
+  zero room for the page's own padding, forcing overflow. Reduced to
+  `minmax(280px, 1fr)` and added padding reductions at both a 700px and a
+  420px breakpoint.
+- Removed the browser-default handling gap where none of the responsive
+  behavior had actually been checked against real breakpoints. Verified
+  (see below) that the two breakpoints fire at exactly the intended
+  widths, including the smallest common phone width (320px).
+
+**What was and wasn't verified:** I don't have a real rendering browser
+available (no network access to download Chromium/Playwright's browser
+binary in this sandbox), so I could not screenshot actual pixel layouts
+at each breakpoint. What I *did* verify with real tools:
+- All 16 DOM click-through checks re-ran clean after every CSS change
+  (confirms the responsive changes didn't break any functionality).
+- A real CSS media-query evaluator (`css-mediaquery`, not a guess) confirms
+  the two breakpoints activate at exactly the intended widths: neither
+  breakpoint fires at 1200px/700px-exclusive-desktop-widths, the 700px
+  breakpoint fires from 700px down to 421px, and both breakpoints fire
+  together from 420px down through 320px (the smallest mainstream phone
+  width).
+- A static scan confirms no remaining fixed-pixel `width` declarations
+  outside of small fixed elements (the 10px status dot) and the
+  intentionally-scrollable table's minimum column width.
+
+If you have access to a real browser, it's still worth manually resizing
+the window / using devtools' device toolbar once to eyeball it — that's
+the one check I genuinely could not perform here.
+
+## In-depth UI audit: is every designed element actually functional?
+
+This was checked two ways, not just by reading the code:
