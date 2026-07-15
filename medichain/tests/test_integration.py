@@ -36,6 +36,9 @@ import os
 import re
 import sys
 import ast
+import atexit
+import shutil
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,7 +46,13 @@ from fastapi.testclient import TestClient
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "contract"))
 
-from main import app, contract  # noqa: E402
+TEST_STATE_DIR = tempfile.mkdtemp(prefix="medichain-integration-")
+atexit.register(shutil.rmtree, TEST_STATE_DIR, True)
+os.environ["MEDICHAIN_ENV"] = "test"
+os.environ["MEDICHAIN_BACKEND_MODE"] = "local"
+os.environ["MEDICHAIN_STATE_PATH"] = os.path.join(TEST_STATE_DIR, "state.json")
+
+from main import app, contract, settings  # noqa: E402
 from main import RegisterTrialRequest, SubmitResultsRequest, SubmitFlagRequest, ResolveAppealRequest  # noqa: E402
 from medichain_contract import IntegrityCheckError  # noqa: E402
 
@@ -64,6 +73,12 @@ def test_health():
     assert r.json()["status"] == "ok"
 
 
+def test_readiness():
+    r = client.get("/api/ready")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ready"
+
+
 def test_full_journey_fraud_case():
     """Theranos-style outcome-switching case: register -> submit -> flagged -> appeal."""
 
@@ -74,7 +89,7 @@ def test_full_journey_fraud_case():
         "primary_hypothesis": "Edison device is non-inferior to standard lab methods",
         "primary_endpoints": ["diagnostic concordance vs reference lab"],
         "expected_sample_size": 200,
-        "sponsor_wallet": "0xSponsorA",
+        "sponsor_wallet": "0x1111111111111111111111111111111111111111",
         "integrity_bond": 5000,
     })
     assert r.status_code == 200, r.text
@@ -158,7 +173,7 @@ def test_full_journey_legitimate_amendment_not_flagged_as_fraud():
         "primary_hypothesis": "Drug X reduces 24-month all-cause mortality vs placebo",
         "primary_endpoints": ["overall survival at 24 months"],
         "expected_sample_size": 2000,
-        "sponsor_wallet": "0xSponsorB",
+        "sponsor_wallet": "0x2222222222222222222222222222222222222222",
         "integrity_bond": 10000,
     })
     assert r.status_code == 200, r.text
@@ -246,7 +261,7 @@ def test_duplicate_trial_registration_rejected():
         "trial_id": "DUPLICATE-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": 100, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 100, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     }
     r1 = client.post("/api/register_trial", json=payload)
     assert r1.status_code == 200
@@ -264,7 +279,7 @@ def test_duplicate_report_id_rejected():
         "trial_id": "DUPREPORT-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": 100, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 100, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     payload = {
         "trial_id": "DUPREPORT-001",
@@ -301,7 +316,7 @@ def test_resolve_appeal_twice_fails_second_time():
         "trial_id": "DOUBLE-APPEAL-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/THERANOS-001",
         "primary_hypothesis": "x", "primary_endpoints": ["diagnostic concordance"],
-        "expected_sample_size": 200, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 200, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     client.post("/api/submit_results", json={
         "trial_id": "DOUBLE-APPEAL-001", "report_id": "double-appeal-report",
@@ -333,7 +348,7 @@ def test_cannot_submit_results_after_trial_already_resolved():
         "trial_id": "TERMINAL-STATE-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/THERANOS-001",
         "primary_hypothesis": "x", "primary_endpoints": ["diagnostic concordance"],
-        "expected_sample_size": 200, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 200, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     client.post("/api/submit_results", json={
         "trial_id": "TERMINAL-STATE-001", "report_id": "terminal-state-report-1",
@@ -365,13 +380,12 @@ def test_empty_publication_url_rejected():
         "trial_id": "EMPTYPUB-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": 100, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 100, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     r = client.post("/api/submit_results", json={
         "trial_id": "EMPTYPUB-001", "report_id": "emptypub-report", "publication_url": "",
     })
-    assert r.status_code == 400
-    assert "publication_url must not be empty" in r.json()["detail"]
+    assert r.status_code == 422
 
 
 def test_empty_whistleblower_submitter_or_description_rejected():
@@ -379,19 +393,17 @@ def test_empty_whistleblower_submitter_or_description_rejected():
         "trial_id": "EMPTYFLAG-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": 100, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 100, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     r1 = client.post("/api/submit_flag", json={
         "trial_id": "EMPTYFLAG-001", "submitter": "", "description": "something happened",
     })
-    assert r1.status_code == 400
-    assert "submitter must not be empty" in r1.json()["detail"]
+    assert r1.status_code == 422
 
     r2 = client.post("/api/submit_flag", json={
         "trial_id": "EMPTYFLAG-001", "submitter": "someone", "description": "",
     })
-    assert r2.status_code == 400
-    assert "description must not be empty" in r2.json()["detail"]
+    assert r2.status_code == 422
 
 
 def test_whistleblower_flag_on_unknown_trial_rejected():
@@ -412,7 +424,7 @@ def test_negative_sample_size_rejected():
         "trial_id": "BADSIZE-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": -5, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": -5, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     assert r.status_code == 422
 
@@ -422,7 +434,7 @@ def test_zero_bond_rejected():
         "trial_id": "BADBOND-001",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": 100, "sponsor_wallet": "0xA", "integrity_bond": 0,
+        "expected_sample_size": 100, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 0,
     })
     assert r.status_code == 422
 
@@ -432,7 +444,7 @@ def test_empty_trial_id_rejected():
         "trial_id": "",
         "clinicaltrials_gov_url": "https://clinicaltrials.gov/study/CARDIO-204",
         "primary_hypothesis": "x", "primary_endpoints": ["y"],
-        "expected_sample_size": 100, "sponsor_wallet": "0xA", "integrity_bond": 100,
+        "expected_sample_size": 100, "sponsor_wallet": "0x3333333333333333333333333333333333333333", "integrity_bond": 100,
     })
     assert r.status_code == 422
 
@@ -454,11 +466,16 @@ def test_cors_headers_present_for_cross_origin_frontend():
         },
     )
     assert r.status_code == 200
-    assert r.headers.get("access-control-allow-origin") == "*"
+    assert r.headers.get("access-control-allow-origin") == "http://127.0.0.1:3000"
 
     r2 = client.get("/api/health", headers={"Origin": "http://127.0.0.1:3000"})
     assert r2.status_code == 200
-    assert r2.headers.get("access-control-allow-origin") == "*"
+    assert r2.headers.get("access-control-allow-origin") == "http://127.0.0.1:3000"
+
+
+def test_development_cors_is_restricted_to_known_local_origins():
+    assert "*" not in settings.allowed_origins
+    assert "http://127.0.0.1:3000" in settings.allowed_origins
 
 
 # =========================================================================
@@ -564,6 +581,18 @@ def test_frontend_calls_only_real_backend_routes():
             for route in backend_routes
         )
         assert matches, f"Frontend calls {path!r} but no matching backend route exists: {backend_routes}"
+
+
+def test_frontend_api_base_is_runtime_configured():
+    html = open(os.path.join(FRONTEND_DIR, "index.html"), encoding="utf-8").read()
+    js = _read_frontend_js()
+    config_js = open(os.path.join(FRONTEND_DIR, "config.js"), encoding="utf-8").read()
+
+    assert 'value="http://localhost:8000"' not in html
+    assert '<script src="config.js"></script>' in html
+    assert "MEDICHAIN_CONFIG" in config_js
+    assert "MEDICHAIN_CONFIG" in js
+    assert "Authorization" in js
 
 
 def test_register_form_fields_match_pydantic_model():
