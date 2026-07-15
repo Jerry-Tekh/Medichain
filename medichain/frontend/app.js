@@ -35,6 +35,18 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function apiErrorMessage(data, status) {
+  if (typeof data.detail === "string") return data.detail;
+  if (Array.isArray(data.detail)) {
+    return data.detail.map((item) => {
+      const location = Array.isArray(item.loc) ? item.loc.slice(1).join(".") : "";
+      return `${location ? `${location}: ` : ""}${item.msg || "invalid value"}`;
+    }).join("; ");
+  }
+  if (typeof data.raw === "string" && data.raw.trim()) return data.raw.trim();
+  return `HTTP ${status}`;
+}
+
 async function callApi(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const headers = new Headers(options.headers || {});
@@ -54,7 +66,7 @@ async function callApi(path, options = {}) {
     }
   }
   if (!res.ok) {
-    throw new Error(data.detail || `HTTP ${res.status}`);
+    throw new Error(apiErrorMessage(data, res.status));
   }
   return data;
 }
