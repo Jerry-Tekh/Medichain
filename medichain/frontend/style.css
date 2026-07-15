@@ -28,11 +28,55 @@ header {
   background: var(--card);
 }
 
-header h1 { margin: 0; letter-spacing: -0.02em; font-size: clamp(1.4rem, 5vw, 2rem); }
-.tagline { margin: 0.25rem 0 1rem; color: #555; font-size: clamp(0.85rem, 2.5vw, 1rem); }
+header h1 { margin: 0; letter-spacing: 0; font-size: 2rem; }
+.tagline { margin: 0.25rem 0 0; color: #555; font-size: 1rem; }
 
-.api-config { font-size: 0.85rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.api-config input { padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; flex: 1 1 160px; min-width: 120px; max-width: 260px; }
+.header-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.wallet-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
+}
+
+.wallet-actions button {
+  margin: 0;
+  min-width: 132px;
+}
+
+.session-bar {
+  min-height: 28px;
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.session-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+.role-badge {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid #b9cec3;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot-unknown { background: #ccc; }
@@ -49,7 +93,7 @@ main {
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 1.25rem;
   min-width: 0; /* prevents grid items from overflowing their track with long unbroken content */
 }
@@ -71,6 +115,18 @@ input, select, textarea {
 }
 textarea { min-height: 60px; resize: vertical; }
 
+.wallet-output {
+  min-height: 36px;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f3f2ed;
+  color: #4b514d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
 button {
   margin-top: 0.25rem;
   padding: 0.6rem 1rem;
@@ -82,6 +138,25 @@ button {
   font-weight: 600;
 }
 button:hover { opacity: 0.9; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+button:disabled:hover { opacity: 0.45; }
+
+.secondary-btn {
+  background: #e8e8e3;
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #9bc5b3;
+  outline-offset: 2px;
+}
 
 .output {
   margin-top: 0.75rem;
@@ -147,12 +222,58 @@ tr.detail-row td {
 .detail-summary { margin-top: 0.25rem; color: #333; }
 .detail-meta { margin-top: 0.2rem; color: #777; font-size: 0.75rem; }
 .detail-empty { color: #777; font-size: 0.85rem; margin: 0; }
-tr.detail-row h4 { margin: 0.4rem 0 0.3rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: #555; }
+tr.detail-row h4 { margin: 0.4rem 0 0.3rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0; color: #555; }
+
+dialog {
+  width: min(680px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 60px rgba(26, 31, 43, 0.22);
+}
+
+dialog::backdrop {
+  background: rgba(26, 31, 43, 0.52);
+}
+
+.signature-dialog {
+  padding: 1.25rem;
+}
+
+.signature-dialog h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.signature-dialog pre {
+  max-height: 50vh;
+  margin: 0.25rem 0;
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f5f4ef;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
 
 /* ---------------- Responsive breakpoints ---------------- */
 
 @media (max-width: 700px) {
   header { padding: 1.25rem 1rem 0.85rem; }
+  header h1 { font-size: 1.6rem; }
+  .tagline { font-size: 0.9rem; }
+  .header-main { align-items: stretch; flex-direction: column; }
+  .wallet-actions { width: 100%; }
+  .wallet-actions button { flex: 1; }
   main { padding: 1rem; gap: 1rem; grid-template-columns: 1fr; }
   .card { padding: 1rem; }
   table { font-size: 0.78rem; }
@@ -165,6 +286,5 @@ tr.detail-row h4 { margin: 0.4rem 0 0.3rem; font-size: 0.8rem; text-transform: u
   main { padding: 0.75rem; }
   .card { padding: 0.85rem; border-radius: 8px; }
   button { width: 100%; }
-  .api-config input { flex-basis: 100px; }
+  .dialog-actions { flex-direction: column-reverse; }
 }
-
