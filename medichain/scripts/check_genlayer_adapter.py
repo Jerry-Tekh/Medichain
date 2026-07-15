@@ -21,6 +21,8 @@ def main() -> int:
     assert "py-genlayer:latest" not in source, "latest runner alias is rejected on GenLayer networks"
     assert "class MediChain(gl.Contract)" in source, "Bradbury runner expects gl.Contract"
     assert "@gl.contract" not in source, "Bradbury runner does not expose gl.contract"
+    assert "gl.UserError" not in source, "pinned Bradbury runner does not expose gl.UserError"
+    assert "raise Exception(message)" in source, "contract guards must use a supported exception"
     assert "emit_raw_event" not in source, "adapter should not depend on uncertain event API"
     assert "= TreeMap()" not in source, "bare TreeMap initializers block Bradbury deployment"
 
