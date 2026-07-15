@@ -194,6 +194,7 @@ Respond only with JSON:
 
 
 class MediChain(gl.Contract):
+    owner: Address
     treasury_address: Address
     trial_ids_json: str
     trial_exists: TreeMap[str, bool]
@@ -232,8 +233,13 @@ class MediChain(gl.Contract):
     flag_status: TreeMap[str, str]
 
     def __init__(self, treasury_address: Address):
+        self.owner = gl.message.sender_account
         self.treasury_address = treasury_address
         self.trial_ids_json = "[]"
+
+    def _require_owner(self) -> None:
+        if gl.message.sender_account != self.owner:
+            _fail("only the MediChain relayer can perform writes")
 
     def _require_trial(self, trial_id: str) -> None:
         if not self.trial_exists.get(trial_id, False):
@@ -295,6 +301,7 @@ class MediChain(gl.Contract):
         sponsor_wallet: str,
         integrity_bond: u256,
     ) -> None:
+        self._require_owner()
         if not trial_id or not trial_id.strip():
             _fail("trial_id must not be empty")
         if self.trial_exists.get(trial_id, False):
@@ -339,6 +346,7 @@ class MediChain(gl.Contract):
         publication_url: str,
         preprint_url: str = "",
     ) -> None:
+        self._require_owner()
         self._require_trial(trial_id)
         if not report_id or not report_id.strip():
             _fail("report_id must not be empty")
@@ -397,6 +405,7 @@ class MediChain(gl.Contract):
 
     @gl.public.write
     def resolve_appeal(self, trial_id: str, decision: str, resolver: str) -> None:
+        self._require_owner()
         self._require_trial(trial_id)
         if self.trial_status[trial_id] != "flagged" or not self.trial_appeal_window_open[trial_id]:
             _fail("no open appeal for this trial")
@@ -417,6 +426,7 @@ class MediChain(gl.Contract):
 
     @gl.public.write
     def submit_flag(self, trial_id: str, submitter: str, description: str, evidence_url: str = "") -> str:
+        self._require_owner()
         self._require_trial(trial_id)
         if not submitter or not submitter.strip():
             _fail("submitter must not be empty")
@@ -447,6 +457,10 @@ class MediChain(gl.Contract):
     @gl.public.view
     def get_treasury_address(self) -> Address:
         return self.treasury_address
+
+    @gl.public.view
+    def get_owner(self) -> Address:
+        return self.owner
 
     @gl.public.view
     def list_trials(self) -> dict:
