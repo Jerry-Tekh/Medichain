@@ -11,7 +11,8 @@
     <h1>MediChain</h1>
     <p class="tagline">Decentralised clinical trial data integrity</p>
     <div class="api-config">
-      API base: <input id="apiBase" value="http://localhost:8000" />
+      API base: <input id="apiBase" readonly aria-label="API base URL" />
+      Write key: <input id="apiToken" type="password" autocomplete="off" aria-label="Write API key" />
       <span id="healthDot" class="dot dot-unknown" title="backend health"></span>
     </div>
   </header>
@@ -25,7 +26,7 @@
         <label>Primary Hypothesis <input name="primary_hypothesis" required /></label>
         <label>Primary Endpoints (comma-separated) <input name="primary_endpoints" required /></label>
         <label>Expected Sample Size <input name="expected_sample_size" type="number" required /></label>
-        <label>Sponsor Wallet <input name="sponsor_wallet" required placeholder="0xSponsor..." /></label>
+        <label>Sponsor Wallet <input name="sponsor_wallet" required placeholder="0x0123... (40 hex characters)" /></label>
         <label>Integrity Bond (GEN) <input name="integrity_bond" type="number" required /></label>
         <button type="submit">Register Trial</button>
       </form>
@@ -88,6 +89,7 @@
     </section>
   </main>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
