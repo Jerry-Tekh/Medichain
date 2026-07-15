@@ -16,7 +16,11 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "contract"))
 
 from config import load_settings  # noqa: E402
-from genlayer_client import GenLayerCliGateway, GenLayerGatewayError  # noqa: E402
+from genlayer_client import (  # noqa: E402
+    GenLayerCliGateway,
+    GenLayerContractError,
+    GenLayerGatewayError,
+)
 from medichain_contract import IntegrityCheckError  # noqa: E402
 from mock_fetcher import mock_webpage_fetcher  # noqa: E402
 from mock_llm import mock_llm_client  # noqa: E402
@@ -184,6 +188,51 @@ def test_genlayer_success_ignores_stderr_diagnostics():
 
     assert output == "Result:\n{}"
     assert gateway._parse_result(output) == {}
+
+
+def test_genlayer_contract_error_is_classified():
+    gateway = GenLayerCliGateway("0x1234")
+
+    class Result:
+        stdout = (
+            'Error:\nexecution failed: Stderr:"Traceback (most recent call last):'
+            "\\nException: unknown trial_id 'MISSING-001'\\n\""
+        )
+        stderr = "Error during read operation"
+        returncode = 1
+
+    import genlayer_client
+    original_run = genlayer_client.subprocess.run
+    genlayer_client.subprocess.run = lambda *args, **kwargs: Result()
+    try:
+        try:
+            gateway._run_process(["genlayer", "call"])
+        except GenLayerContractError as exc:
+            assert str(exc) == "unknown trial_id 'MISSING-001'"
+        else:
+            raise AssertionError("expected GenLayerContractError")
+    finally:
+        genlayer_client.subprocess.run = original_run
+
+
+def test_genlayer_transport_error_stays_gateway_error():
+    gateway = GenLayerCliGateway("0x1234")
+
+    class Result:
+        stdout = ""
+        stderr = "connect ECONNREFUSED rpc-bradbury.genlayer.com"
+        returncode = 1
+
+    import genlayer_client
+    original_run = genlayer_client.subprocess.run
+    genlayer_client.subprocess.run = lambda *args, **kwargs: Result()
+    try:
+        assert_raises(
+            GenLayerGatewayError,
+            lambda: gateway._run_process(["genlayer", "call"]),
+        )
+    finally:
+        genlayer_client.subprocess.run = original_run
 
 
 def test_genlayer_write_rejects_error_receipt():
