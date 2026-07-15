@@ -2,6 +2,7 @@
   "name": "medichain-frontend",
   "private": true,
   "scripts": {
+    "build": "node build-config.js",
     "test:dom": "node dom_test.js"
   },
   "devDependencies": {
