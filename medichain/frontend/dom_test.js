@@ -43,17 +43,17 @@ async function loadPage() {
   // global fetch natively) onto the window, exactly like a real browser
   // would provide it.
   dom.window.fetch = fetch;
+  dom.window.Headers = Headers;
 
   // Manually inject app.js the same way <script src="app.js"> would, since
   // runScripts + external <script src> file:// loading is unreliable in
   // jsdom -- but the CONTENT executed is byte-identical to the shipped file.
+  const configJs = fs.readFileSync(path.join(FRONTEND_DIR, "config.js"), "utf8");
+  dom.window.eval(configJs);
+  dom.window.MEDICHAIN_CONFIG.API_BASE_URL = API_BASE;
   const appJs = fs.readFileSync(path.join(FRONTEND_DIR, "app.js"), "utf8");
   dom.window.eval(appJs);
 
-  dom.window.document.getElementById("apiBase").value = API_BASE;
-  // re-trigger the app's own checkHealth via the same path a user changing
-  // the field would trigger
-  dom.window.document.getElementById("apiBase").dispatchEvent(new dom.window.Event("change"));
   await sleep(300);
 
   return dom;
@@ -92,7 +92,7 @@ async function submitForm(dom, formId, values) {
     primary_hypothesis: "Drug X reduces mortality",
     primary_endpoints: "overall survival at 24 months",
     expected_sample_size: "2000",
-    sponsor_wallet: "0xDomTest",
+    sponsor_wallet: "0x4444444444444444444444444444444444444444",
     integrity_bond: "500",
   });
   const registerOut = doc.getElementById("registerOutput").textContent;
@@ -197,10 +197,15 @@ async function submitForm(dom, formId, values) {
     primary_hypothesis: "x",
     primary_endpoints: "y",
     expected_sample_size: "10",
-    sponsor_wallet: "0xEvil",
+    sponsor_wallet: "0x5555555555555555555555555555555555555555",
     integrity_bond: "10",
   });
   await sleep(400);
+  const rejectedMarkup = doc.getElementById("registerOutput").textContent;
+  assert(
+    rejectedMarkup.startsWith("Error:"),
+    "API rejects a trial_id containing markup before it can reach the dashboard"
+  );
   const injected = doc.querySelector("#trialsTable tbody img[onerror]");
   assert(
     !injected,
