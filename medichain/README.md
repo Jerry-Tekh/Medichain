@@ -359,35 +359,40 @@ what's in your hands is what was tested.
 `backend/mock_llm.py` is a **deterministic, keyword-based stand-in** for
 `gl.exec_prompt()`. It exists only so the wiring (contract logic ↔ API ↔
 frontend) can be tested reproducibly without network access or API keys.
-It is not a real integrity analysis engine — real LLM validators reading
+It is not a real integrity analysis engine. Production does not use this
+module: `MEDICHAIN_BACKEND_MODE=genlayer` routes reads and writes to the
+deployed Bradbury contract, where validators perform the web and LLM work.
+Real validators reading
 arbitrary trial documents and reasoning about outcome switching, p-hacking,
-etc. is what `gl.exec_prompt()` does on GenLayer. Swapping it for the real
-thing is a one-line change (see `genlayer_adapter.py`).
+etc. is what the pinned GenLayer adapter does.
 
 ## Deploying to GenLayer Bradbury
 
-1. Verify the deploy adapter before every deploy:
+The production contract is already deployed at
+`0x9c6D4d30F89f8701C8a4E63902880D52C5269523`. Verify the adapter before any
+future redeploy:
+
+1. Run the repository's Bradbury check:
    ```bash
-   python3 -m py_compile contract/genlayer_adapter.py
+   python3 scripts/check_genlayer_adapter.py
    ```
-2. If the GenLayer tools are installed, run the schema check:
+2. Verify the deployed schema:
    ```bash
-   genvm-lint schema contract/genlayer_adapter.py
+   npx -y genlayer@0.39.2 schema 0x9c6D4d30F89f8701C8a4E63902880D52C5269523
    ```
 3. Deploy only `contract/genlayer_adapter.py` as the single-file
    contract. The local `medichain_contract.py` remains the FastAPI test
    implementation; the adapter is the deployable GenLayer contract.
-4. Use the Bradbury network:
+4. Use the Bradbury network and explicit validator allocations:
    ```bash
-   genlayer network set testnet-bradbury
-   genlayer deploy --contract contract/genlayer_adapter.py --args "$TREASURE_ADDRESS"
+   npx -y genlayer@0.39.2 network set testnet-bradbury
+   npx -y genlayer@0.39.2 deploy \
+     --contract contract/genlayer_adapter.py \
+     --args "$TREASURE_ADDRESS" \
+     --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
    ```
-5. After deploy, always inspect the deploy receipt for execution success
-   before checking schema:
-   ```bash
-   genlayer receipt <txHash> --stdout --stderr
-   genlayer schema <contractAddress>
-   ```
+5. Require an accepted receipt, `AGREE` consensus, and
+   `FINISHED_WITH_RETURN` before checking schema.
 
 If schema is still unavailable after deploy, first check the deploy
 receipt. GenLayer can accept/finalize a transaction whose contract
@@ -404,8 +409,21 @@ cd backend && uvicorn main:app --reload --port 8000
 
 # frontend (separate terminal)
 cd frontend && python3 -m http.server 3000
-# open http://localhost:3000 in a browser, API base already points at :8000
+# for separate local origins, set API_BASE_URL in config.js to the API origin
 
 # tests (separate terminal)
 cd tests && pytest -v
 ```
+
+## Production deployment
+
+The production API uses restricted CORS and host allowlists, bearer-token
+authentication for every write, the deployed Bradbury contract for durable
+state, bounded request concurrency, and read-after-write contract responses.
+The frontend receives only its public `API_BASE_URL`; signing keys and API
+tokens are backend secrets.
+
+Use the root `Dockerfile` or `render.yaml` for the backend and
+`frontend/vercel.json` for the static frontend. The complete environment
+variable list, secret handling rules, and post-deploy checks are in
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
