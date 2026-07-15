@@ -206,6 +206,10 @@ async function submitForm(dom, formId, values) {
     rejectedMarkup.startsWith("Error:"),
     "API rejects a trial_id containing markup before it can reach the dashboard"
   );
+  assert(
+    rejectedMarkup.includes("trial_id"),
+    "validation errors identify the field that needs correction"
+  );
   const injected = doc.querySelector("#trialsTable tbody img[onerror]");
   assert(
     !injected,
