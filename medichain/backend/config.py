@@ -18,6 +18,7 @@ BRADBURY_NETWORK = "testnet-bradbury"
 ADDRESS_PATTERN = re.compile(r"^0x[0-9a-fA-F]{40}$")
 PRIVATE_KEY_PATTERN = re.compile(r"^(?:0x)?[0-9a-fA-F]{64}$")
 ACCOUNT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+JWT_SECRET_MIN_LENGTH = 64
 
 
 def _csv(value: str) -> tuple[str, ...]:
@@ -58,6 +59,18 @@ class Settings:
     allowed_hosts: tuple[str, ...]
     require_write_auth: bool
     api_tokens: tuple[str, ...]
+    wallet_auth_required: bool
+    auth_database_url: str
+    jwt_secret: str
+    jwt_issuer: str
+    jwt_audience: str
+    auth_domain: str
+    auth_uri: str
+    auth_chain_id: int
+    auth_challenge_ttl_seconds: int
+    auth_session_ttl_seconds: int
+    regulator_wallets: tuple[str, ...]
+    admin_wallets: tuple[str, ...]
     state_path: str
     genlayer_contract_address: str
     genlayer_rpc_url: str
@@ -132,12 +145,32 @@ class Settings:
         if self.is_production and self.backend_mode != "genlayer":
             raise RuntimeError("production requires MEDICHAIN_BACKEND_MODE=genlayer")
 
-        if self.is_production and not self.require_write_auth:
-            raise RuntimeError("production requires MEDICHAIN_REQUIRE_WRITE_AUTH=true")
-        if self.require_write_auth and not self.api_tokens:
-            raise RuntimeError("API_TOKENS must be set when write authentication is enabled")
-        if self.is_production and any(len(token) < 32 for token in self.api_tokens):
-            raise RuntimeError("production API_TOKENS must each contain at least 32 characters")
+        if self.is_production and not self.wallet_auth_required:
+            raise RuntimeError("production requires MEDICHAIN_WALLET_AUTH_REQUIRED=true")
+        if self.is_production and len(self.jwt_secret) < JWT_SECRET_MIN_LENGTH:
+            raise RuntimeError(
+                f"JWT_SECRET must contain at least {JWT_SECRET_MIN_LENGTH} characters"
+            )
+        if not self.jwt_issuer.strip() or not self.jwt_audience.strip():
+            raise RuntimeError("JWT_ISSUER and JWT_AUDIENCE must not be empty")
+        if self.is_production:
+            if not self.auth_database_url.strip():
+                raise RuntimeError("DATABASE_URL is required in production")
+            if not self.auth_database_url.startswith(("postgres://", "postgresql://")):
+                raise RuntimeError("production DATABASE_URL must use PostgreSQL")
+            if not self.auth_domain.strip() or not self.auth_uri.strip():
+                raise RuntimeError("MEDICHAIN_AUTH_DOMAIN and MEDICHAIN_AUTH_URI are required")
+            if not self.auth_uri.startswith("https://"):
+                raise RuntimeError("MEDICHAIN_AUTH_URI must use HTTPS in production")
+        if not 60 <= self.auth_challenge_ttl_seconds <= 900:
+            raise RuntimeError("MEDICHAIN_AUTH_CHALLENGE_TTL_SECONDS must be between 60 and 900")
+        if not 300 <= self.auth_session_ttl_seconds <= 86_400:
+            raise RuntimeError("MEDICHAIN_AUTH_SESSION_TTL_SECONDS must be between 300 and 86400")
+        if self.auth_chain_id <= 0:
+            raise RuntimeError("MEDICHAIN_AUTH_CHAIN_ID must be a positive integer")
+        for wallet in self.regulator_wallets + self.admin_wallets:
+            if not ADDRESS_PATTERN.fullmatch(wallet):
+                raise RuntimeError(f"invalid privileged wallet address: {wallet}")
 
         if self.backend_mode == "local":
             if not self.state_path.strip():
@@ -189,6 +222,23 @@ def load_settings() -> Settings:
     allowed_hosts = _csv(os.getenv("ALLOWED_HOSTS", ",".join(DEFAULT_LOCAL_HOSTS)))
     api_tokens = _csv(os.getenv("API_TOKENS", ""))
     require_write_auth = _bool_env("MEDICHAIN_REQUIRE_WRITE_AUTH", environment == "production")
+    wallet_auth_required = _bool_env(
+        "MEDICHAIN_WALLET_AUTH_REQUIRED",
+        environment == "production",
+    )
+    database_url = os.getenv(
+        "DATABASE_URL",
+        f"sqlite:///{os.getenv('MEDICHAIN_AUTH_DB_PATH', 'data/medichain_auth.db')}",
+    ).strip()
+    auth_uri = os.getenv(
+        "MEDICHAIN_AUTH_URI",
+        next((origin for origin in allowed_origins if origin.startswith("https://")), ""),
+    ).strip().rstrip("/")
+    auth_domain = os.getenv("MEDICHAIN_AUTH_DOMAIN", "").strip()
+    if not auth_domain and auth_uri:
+        auth_domain = urlparse(auth_uri).netloc
+    def _wallets(name: str) -> tuple[str, ...]:
+        return tuple(item.lower() for item in _csv(os.getenv(name, "")))
 
     settings = Settings(
         environment=environment,
@@ -197,6 +247,23 @@ def load_settings() -> Settings:
         allowed_hosts=allowed_hosts,
         require_write_auth=require_write_auth,
         api_tokens=api_tokens,
+        wallet_auth_required=wallet_auth_required,
+        auth_database_url=database_url,
+        jwt_secret=os.getenv(
+            "JWT_SECRET",
+            "development-wallet-auth-secret-" + ("x" * 64)
+            if environment != "production"
+            else "",
+        ).strip(),
+        jwt_issuer=os.getenv("JWT_ISSUER", "medichain-api").strip(),
+        jwt_audience=os.getenv("JWT_AUDIENCE", "medichain-web").strip(),
+        auth_domain=auth_domain,
+        auth_uri=auth_uri,
+        auth_chain_id=_int_env("MEDICHAIN_AUTH_CHAIN_ID", 4221),
+        auth_challenge_ttl_seconds=_int_env("MEDICHAIN_AUTH_CHALLENGE_TTL_SECONDS", 300),
+        auth_session_ttl_seconds=_int_env("MEDICHAIN_AUTH_SESSION_TTL_SECONDS", 3600),
+        regulator_wallets=_wallets("MEDICHAIN_REGULATOR_WALLETS"),
+        admin_wallets=_wallets("MEDICHAIN_ADMIN_WALLETS"),
         state_path=os.getenv("MEDICHAIN_STATE_PATH", "data/medichain_state.json"),
         genlayer_contract_address=(
             os.getenv("MEDICHAIN_CONTRACT_ADDRESS")
