@@ -43,7 +43,9 @@ non-critical flags do not need to match.
 
 
 def _fail(message: str) -> None:
-    raise gl.UserError(message)
+    # The pinned runner lacks a dedicated user-error class; a built-in
+    # exception preserves the intended failure and message.
+    raise Exception(message)
 
 
 def _clean_json_response(raw: str) -> str:
