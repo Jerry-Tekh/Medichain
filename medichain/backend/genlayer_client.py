@@ -78,10 +78,14 @@ class GenLayerCliGateway:
             raise GenLayerGatewayError(
                 f"GenLayer CLI timed out after {self.timeout_seconds} seconds"
             ) from exc
-        output = f"{result.stdout}\n{result.stderr}".strip()
         if result.returncode != 0:
-            raise GenLayerGatewayError(f"GenLayer CLI failed: {output[-1200:]}")
-        return output
+            diagnostics = f"{result.stdout}\n{result.stderr}".strip()
+            raise GenLayerGatewayError(f"GenLayer CLI failed: {diagnostics[-1200:]}")
+
+        # genlayer-cli writes the contract result to stdout and progress,
+        # warnings, and spinner status to stderr. Parsing the combined streams
+        # corrupts otherwise valid JSON/object results.
+        return result.stdout.strip() or result.stderr.strip()
 
     def _ethers_module_path(self) -> str:
         override = os.getenv("GENLAYER_ETHERS_MODULE")
