@@ -22,6 +22,10 @@ class GenLayerGatewayError(RuntimeError):
     """Raised when the Bradbury CLI or network is unavailable."""
 
 
+class GenLayerContractError(IntegrityCheckError):
+    """Raised when GenVM intentionally rejects a contract operation."""
+
+
 class GenLayerCliGateway:
     def __init__(
         self,
@@ -80,12 +84,26 @@ class GenLayerCliGateway:
             ) from exc
         if result.returncode != 0:
             diagnostics = f"{result.stdout}\n{result.stderr}".strip()
+            contract_error = self._extract_contract_error(diagnostics)
+            if contract_error:
+                raise GenLayerContractError(contract_error)
             raise GenLayerGatewayError(f"GenLayer CLI failed: {diagnostics[-1200:]}")
 
         # genlayer-cli writes the contract result to stdout and progress,
         # warnings, and spinner status to stderr. Parsing the combined streams
         # corrupts otherwise valid JSON/object results.
         return result.stdout.strip() or result.stderr.strip()
+
+    def _extract_contract_error(self, output: str) -> str:
+        normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+        normalized = normalized.replace("\\n", "\n").replace('\\"', '"')
+        matches = re.findall(
+            r"(?:Exception|AssertionError|ValueError|RuntimeError):[ \t]*([^\n\"]+)",
+            normalized,
+        )
+        if not matches:
+            return ""
+        return matches[-1].strip()
 
     def _ethers_module_path(self) -> str:
         override = os.getenv("GENLAYER_ETHERS_MODULE")
