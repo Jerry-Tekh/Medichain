@@ -1,5 +1,20 @@
+const MEDICHAIN_CONFIG = window.MEDICHAIN_CONFIG || {};
+
+function defaultApiBase() {
+  return (MEDICHAIN_CONFIG.API_BASE_URL || window.location.origin || "").replace(/\/$/, "");
+}
+
+function initConfigControls() {
+  const apiBaseInput = document.getElementById("apiBase");
+  apiBaseInput.value = defaultApiBase();
+}
+
 function apiBase() {
-  return document.getElementById("apiBase").value.replace(/\/$/, "");
+  return defaultApiBase();
+}
+
+function writeToken() {
+  return document.getElementById("apiToken").value.trim();
 }
 
 // BUG FIX: every piece of dynamic data rendered into the dashboard table
@@ -20,9 +35,24 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-async function callApi(path, options) {
-  const res = await fetch(apiBase() + path, options);
-  const data = await res.json().catch(() => ({}));
+async function callApi(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const token = writeToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await fetch(apiBase() + path, { ...options, headers });
+  const text = await res.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      data = { raw: text };
+    }
+  }
   if (!res.ok) {
     throw new Error(data.detail || `HTTP ${res.status}`);
   }
@@ -32,7 +62,7 @@ async function callApi(path, options) {
 async function checkHealth() {
   const dot = document.getElementById("healthDot");
   try {
-    await callApi("/api/health", { method: "GET" });
+    await callApi("/api/ready", { method: "GET" });
     dot.className = "dot dot-ok";
   } catch (e) {
     dot.className = "dot dot-bad";
@@ -273,7 +303,7 @@ document.querySelector("#trialsTable tbody").addEventListener("click", async (e)
 });
 
 document.getElementById("refreshBtn").addEventListener("click", refreshTrials);
-document.getElementById("apiBase").addEventListener("change", checkHealth);
 
+initConfigControls();
 checkHealth();
 refreshTrials();
