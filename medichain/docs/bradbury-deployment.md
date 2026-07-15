@@ -11,7 +11,18 @@ commands used from this workspace.
 - Chain ID: `4221`
 - RPC: `https://rpc-bradbury.genlayer.com`
 
-## Successful Deployment
+## Current Production Deployment
+
+- Contract: `0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`
+- Consensus result: `AGREE`
+- Execution result: `FINISHED_WITH_RETURN`
+- Schema: verified
+- Treasury: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
+
+This deployment replaces the initial contract because the pinned runner does
+not expose the earlier runner-specific user-error class.
+
+## Initial Schema-Fix Deployment
 
 - Transaction: `0xff12089804b1773c0858495e194e8b206c32b4e69e4ffe0ad2c37eb4adc0d18f`
 - Contract: `0x9c6D4d30F89f8701C8a4E63902880D52C5269523`
@@ -79,7 +90,7 @@ allowed validators to accept the deployment.
 ## Schema Verification
 
 ```bash
-npx -y genlayer@0.39.2 schema 0x9c6D4d30F89f8701C8a4E63902880D52C5269523
+npx -y genlayer@0.39.2 schema 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
 ```
 
 The schema call returned constructor parameter `treasury_address` and all public
@@ -90,7 +101,7 @@ view/write methods, including `register_trial`, `submit_results`,
 
 ```bash
 npx -y genlayer@0.39.2 call \
-  0x9c6D4d30F89f8701C8a4E63902880D52C5269523 \
+  0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50 \
   get_treasury_address
 ```
 

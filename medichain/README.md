@@ -293,14 +293,13 @@ npx -y genlayer@0.39.2 deploy \
   --args "$TREASURE_ADDRESS" \
   --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
 
-npx -y genlayer@0.39.2 schema 0x9c6D4d30F89f8701C8a4E63902880D52C5269523
-npx -y genlayer@0.39.2 call 0x9c6D4d30F89f8701C8a4E63902880D52C5269523 get_treasury_address
+npx -y genlayer@0.39.2 schema 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
+npx -y genlayer@0.39.2 call 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50 get_treasury_address
 ```
 
-Successful Bradbury deploy:
+Current corrected Bradbury deploy:
 
-- Transaction: `0xff12089804b1773c0858495e194e8b206c32b4e69e4ffe0ad2c37eb4adc0d18f`
-- Contract: `0x9c6D4d30F89f8701C8a4E63902880D52C5269523`
+- Contract: `0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`
 - Receipt result: `ACCEPTED`, `AGREE`, `FINISHED_WITH_RETURN`
 - Schema: retrieved successfully
 - `get_treasury_address`: read successfully
@@ -369,7 +368,7 @@ etc. is what the pinned GenLayer adapter does.
 ## Deploying to GenLayer Bradbury
 
 The production contract is already deployed at
-`0x9c6D4d30F89f8701C8a4E63902880D52C5269523`. Verify the adapter before any
+`0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`. Verify the adapter before any
 future redeploy:
 
 1. Run the repository's Bradbury check:
@@ -378,7 +377,7 @@ future redeploy:
    ```
 2. Verify the deployed schema:
    ```bash
-   npx -y genlayer@0.39.2 schema 0x9c6D4d30F89f8701C8a4E63902880D52C5269523
+   npx -y genlayer@0.39.2 schema 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
    ```
 3. Deploy only `contract/genlayer_adapter.py` as the single-file
    contract. The local `medichain_contract.py` remains the FastAPI test
