@@ -171,6 +171,10 @@ class WalletAuthService:
             raise AuthenticationError("wallet challenge is no longer valid")
 
         user = self.store.upsert_user(normalized, self._role_for_new_user(normalized), now)
+        configured_role = self._role_for_new_user(normalized)
+        if configured_role != "sponsor" and user.role != configured_role:
+            self.store.set_user_role(normalized, configured_role)
+            user = self.store.get_user(normalized)
         if not user.active:
             raise AuthorizationError("wallet account is disabled")
         session_id = secrets.token_urlsafe(32)

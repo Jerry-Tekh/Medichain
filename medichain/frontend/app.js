@@ -1,4 +1,15 @@
 const MEDICHAIN_CONFIG = window.MEDICHAIN_CONFIG || {};
+const TARGET_CHAIN_ID = Number(MEDICHAIN_CONFIG.WALLET_CHAIN_ID || 4221);
+const TARGET_CHAIN_HEX = `0x${TARGET_CHAIN_ID.toString(16)}`;
+const TARGET_CHAIN_NAME = MEDICHAIN_CONFIG.WALLET_CHAIN_NAME || "GenLayer Bradbury";
+
+const walletSession = {
+  accessToken: "",
+  expiresAt: 0,
+  user: null,
+  busy: false,
+};
+let sessionExpiryTimer = null;
 
 function defaultApiBase() {
   return (MEDICHAIN_CONFIG.API_BASE_URL || window.location.origin || "").replace(/\/$/, "");
@@ -13,8 +24,199 @@ function apiBase() {
   return defaultApiBase();
 }
 
-function writeToken() {
-  return document.getElementById("apiToken").value.trim();
+function walletProvider() {
+  return window.ethereum || null;
+}
+
+function shortAddress(address) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function walletErrorMessage(error) {
+  if (error && error.code === 4001) return "Wallet request was cancelled";
+  return error && error.message ? error.message : "Wallet request failed";
+}
+
+function roleAllows(form, role) {
+  return (form.dataset.authRoles || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .includes(role);
+}
+
+function updateWalletUi(message = "") {
+  const connected = Boolean(walletSession.accessToken && walletSession.user);
+  const connectButton = document.getElementById("connectWalletBtn");
+  const disconnectButton = document.getElementById("disconnectWalletBtn");
+  const status = document.getElementById("walletStatus");
+  const role = document.getElementById("walletRole");
+
+  connectButton.hidden = connected;
+  connectButton.disabled = walletSession.busy;
+  connectButton.textContent = walletSession.busy ? "Connecting..." : "Connect Wallet";
+  disconnectButton.hidden = !connected;
+  disconnectButton.disabled = walletSession.busy;
+
+  if (connected) {
+    status.textContent = shortAddress(walletSession.user.address);
+    status.title = walletSession.user.address;
+    role.textContent = walletSession.user.role;
+    role.hidden = false;
+  } else {
+    status.textContent = message || "Wallet not connected";
+    status.removeAttribute("title");
+    role.hidden = true;
+  }
+
+  for (const form of document.querySelectorAll("form[data-auth-roles]")) {
+    const permitted = connected && roleAllows(form, walletSession.user.role);
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = !permitted || walletSession.busy;
+    form.setAttribute("aria-disabled", permitted ? "false" : "true");
+  }
+
+  const address = connected ? walletSession.user.address : "Not connected";
+  document.getElementById("registerSponsor").textContent = address;
+  document.getElementById("appealResolver").textContent = address;
+  document.getElementById("flagSubmitter").textContent = address;
+}
+
+function clearWalletSession(message = "Wallet not connected") {
+  walletSession.accessToken = "";
+  walletSession.expiresAt = 0;
+  walletSession.user = null;
+  if (sessionExpiryTimer) window.clearTimeout(sessionExpiryTimer);
+  sessionExpiryTimer = null;
+  updateWalletUi(message);
+}
+
+function activateWalletSession(result) {
+  walletSession.accessToken = result.access_token;
+  walletSession.expiresAt = result.expires_at;
+  walletSession.user = result.user;
+  const remainingMs = Math.max(0, (result.expires_at * 1000) - Date.now());
+  if (sessionExpiryTimer) window.clearTimeout(sessionExpiryTimer);
+  sessionExpiryTimer = window.setTimeout(
+    () => clearWalletSession("Wallet session expired"),
+    remainingMs,
+  );
+  updateWalletUi();
+}
+
+function requireFormAccess(form) {
+  if (!walletSession.accessToken || !walletSession.user) {
+    throw new Error("Connect and sign in with your wallet first");
+  }
+  if (!roleAllows(form, walletSession.user.role)) {
+    throw new Error("Your wallet role cannot perform this action");
+  }
+}
+
+async function ensureBradburyNetwork(provider) {
+  const currentChain = await provider.request({ method: "eth_chainId" });
+  if (Number.parseInt(currentChain, 16) === TARGET_CHAIN_ID) return;
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: TARGET_CHAIN_HEX }],
+    });
+  } catch (error) {
+    if (error.code !== 4902) throw error;
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: TARGET_CHAIN_HEX,
+        chainName: TARGET_CHAIN_NAME,
+        nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+        rpcUrls: [MEDICHAIN_CONFIG.WALLET_RPC_URL],
+        blockExplorerUrls: [MEDICHAIN_CONFIG.WALLET_EXPLORER_URL],
+      }],
+    });
+  }
+}
+
+function confirmSignatureMessage(message) {
+  const dialog = document.getElementById("signatureDialog");
+  document.getElementById("signatureMessage").textContent = message;
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener(
+      "close",
+      () => resolve(dialog.returnValue === "confirm"),
+      { once: true },
+    );
+  });
+}
+
+async function personalSign(provider, address, message) {
+  try {
+    return await provider.request({
+      method: "personal_sign",
+      params: [message, address],
+    });
+  } catch (error) {
+    if (error.code !== -32602) throw error;
+    return provider.request({
+      method: "personal_sign",
+      params: [address, message],
+    });
+  }
+}
+
+async function connectWallet() {
+  const provider = walletProvider();
+  if (!provider) {
+    clearWalletSession("Compatible wallet not found");
+    return;
+  }
+
+  walletSession.busy = true;
+  updateWalletUi();
+  try {
+    await ensureBradburyNetwork(provider);
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    if (!accounts || !accounts[0]) throw new Error("Wallet did not provide an account");
+    const address = accounts[0];
+    const challenge = await callApi("/api/auth/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, chain_id: TARGET_CHAIN_ID }),
+    });
+    const confirmed = await confirmSignatureMessage(challenge.message);
+    if (!confirmed) throw { code: 4001, message: "Wallet request was cancelled" };
+    const signature = await personalSign(provider, address, challenge.message);
+    const session = await callApi("/api/auth/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challenge_id: challenge.challenge_id,
+        address,
+        signature,
+      }),
+    });
+    activateWalletSession(session);
+  } catch (error) {
+    clearWalletSession(walletErrorMessage(error));
+  } finally {
+    walletSession.busy = false;
+    updateWalletUi();
+  }
+}
+
+async function disconnectWallet() {
+  const token = walletSession.accessToken;
+  clearWalletSession();
+  if (!token) return;
+  try {
+    await callApi("/api/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (_) {
+    // Local session is already cleared; server expiry remains bounded.
+  }
 }
 
 // BUG FIX: every piece of dynamic data rendered into the dashboard table
@@ -48,11 +250,9 @@ function apiErrorMessage(data, status) {
 }
 
 async function callApi(path, options = {}) {
-  const method = (options.method || "GET").toUpperCase();
   const headers = new Headers(options.headers || {});
-  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    const token = writeToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (walletSession.accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${walletSession.accessToken}`);
   }
 
   const res = await fetch(apiBase() + path, { ...options, headers });
@@ -66,6 +266,13 @@ async function callApi(path, options = {}) {
     }
   }
   if (!res.ok) {
+    if (
+      res.status === 401
+      && walletSession.accessToken
+      && !path.startsWith("/api/auth/")
+    ) {
+      clearWalletSession("Wallet session expired");
+    }
     throw new Error(apiErrorMessage(data, res.status));
   }
   return data;
@@ -93,6 +300,7 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
   e.preventDefault();
   const out = document.getElementById("registerOutput");
   try {
+    requireFormAccess(e.target);
     const payload = formToJson(e.target);
     payload.primary_endpoints = payload.primary_endpoints.split(",").map(s => s.trim()).filter(Boolean);
     payload.expected_sample_size = parseInt(payload.expected_sample_size, 10);
@@ -115,6 +323,7 @@ document.getElementById("submitForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const out = document.getElementById("submitOutput");
   try {
+    requireFormAccess(e.target);
     const payload = formToJson(e.target);
     const result = await callApi("/api/submit_results", {
       method: "POST",
@@ -133,6 +342,7 @@ document.getElementById("appealForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const out = document.getElementById("appealOutput");
   try {
+    requireFormAccess(e.target);
     const payload = formToJson(e.target);
     const result = await callApi("/api/resolve_appeal", {
       method: "POST",
@@ -151,6 +361,7 @@ document.getElementById("flagForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const out = document.getElementById("flagOutput");
   try {
+    requireFormAccess(e.target);
     const payload = formToJson(e.target);
     const result = await callApi("/api/submit_flag", {
       method: "POST",
@@ -316,6 +527,19 @@ document.querySelector("#trialsTable tbody").addEventListener("click", async (e)
 
 document.getElementById("refreshBtn").addEventListener("click", refreshTrials);
 
+document.getElementById("connectWalletBtn").addEventListener("click", connectWallet);
+document.getElementById("disconnectWalletBtn").addEventListener("click", disconnectWallet);
+
+if (walletProvider() && typeof walletProvider().on === "function") {
+  walletProvider().on("accountsChanged", () => {
+    clearWalletSession("Wallet account changed; sign in again");
+  });
+  walletProvider().on("chainChanged", () => {
+    clearWalletSession("Wallet network changed; connect to Bradbury");
+  });
+}
+
 initConfigControls();
+updateWalletUi();
 checkHealth();
 refreshTrials();
