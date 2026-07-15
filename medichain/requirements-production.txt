@@ -1,3 +1,6 @@
 fastapi==0.139.0
 pydantic==2.13.3
 uvicorn==0.51.0
+eth-account==0.13.7
+PyJWT==2.13.0
+psycopg[binary]==3.3.4
