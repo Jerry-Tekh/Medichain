@@ -162,6 +162,30 @@ Read operation successfully executed
     }
 
 
+def test_genlayer_success_ignores_stderr_diagnostics():
+    gateway = GenLayerCliGateway("0x1234")
+
+    class Result:
+        stdout = "\nResult:\n{}\n\n"
+        stderr = (
+            "[genlayer-js] initializeConsensusSmartContract() is deprecated\n"
+            "- Calling method list_trials...\n"
+            "Read operation successfully executed\n"
+        )
+        returncode = 0
+
+    import genlayer_client
+    original_run = genlayer_client.subprocess.run
+    genlayer_client.subprocess.run = lambda *args, **kwargs: Result()
+    try:
+        output = gateway._run_process(["genlayer", "call"])
+    finally:
+        genlayer_client.subprocess.run = original_run
+
+    assert output == "Result:\n{}"
+    assert gateway._parse_result(output) == {}
+
+
 def test_genlayer_write_rejects_error_receipt():
     gateway = GenLayerCliGateway("0x1234")
     gateway._ready = True
