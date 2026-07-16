@@ -23,7 +23,8 @@ def main() -> int:
     assert "@gl.contract" not in source, "Bradbury runner does not expose gl.contract"
     assert "gl.UserError" not in source, "pinned Bradbury runner does not expose gl.UserError"
     assert "raise Exception(message)" in source, "contract guards must use a supported exception"
-    assert "self.owner = gl.message.sender_account" in source, "deployer must become relayer owner"
+    assert "sender_account" not in source, "pinned runner exposes sender_address, not sender_account"
+    assert "self.owner = gl.message.sender_address" in source, "deployer must become relayer owner"
     assert "only the MediChain relayer can perform writes" in source
     assert "emit_raw_event" not in source, "adapter should not depend on uncertain event API"
     assert "= TreeMap()" not in source, "bare TreeMap initializers block Bradbury deployment"

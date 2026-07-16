@@ -233,12 +233,12 @@ class MediChain(gl.Contract):
     flag_status: TreeMap[str, str]
 
     def __init__(self, treasury_address: Address):
-        self.owner = gl.message.sender_account
+        self.owner = gl.message.sender_address
         self.treasury_address = treasury_address
         self.trial_ids_json = "[]"
 
     def _require_owner(self) -> None:
-        if gl.message.sender_account != self.owner:
+        if gl.message.sender_address != self.owner:
             _fail("only the MediChain relayer can perform writes")
 
     def _require_trial(self, trial_id: str) -> None:

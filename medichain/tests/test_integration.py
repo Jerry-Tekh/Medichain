@@ -506,7 +506,8 @@ def test_genlayer_adapter_is_bradbury_schema_ready():
     assert "@gl.contract" not in source
     assert "emit_raw_event" not in source
     assert "= TreeMap()" not in source
-    assert "self.owner = gl.message.sender_account" in source
+    assert "sender_account" not in source
+    assert "self.owner = gl.message.sender_address" in source
     assert "only the MediChain relayer can perform writes" in source
 
     tree = ast.parse(source)
