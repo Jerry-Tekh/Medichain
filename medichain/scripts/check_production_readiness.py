@@ -18,13 +18,15 @@ def assert_backend_config() -> None:
     config = read("medichain/backend/config.py")
     assert 'allow_origins=["*"]' not in main
     assert "allow_origins=list(settings.allowed_origins)" in main
-    assert "require_write_auth" in main
+    assert "current_wallet" in main
+    assert "/api/auth/challenge" in main
+    assert "WalletAuthService" in main
     assert "GenLayerCliGateway" in main
     assert "PersistentMediChainContract" in main
     assert "production requires MEDICHAIN_BACKEND_MODE=genlayer" in config
     assert "ALLOWED_ORIGINS must not contain '*'" in config
-    assert "API_TOKENS must be set" in config
-    assert "production requires MEDICHAIN_REQUIRE_WRITE_AUTH=true" in config
+    assert "DATABASE_URL is required in production" in config
+    assert "MEDICHAIN_ADMIN_WALLETS" in config
 
 
 def assert_frontend_config() -> None:
@@ -39,6 +41,9 @@ def assert_frontend_config() -> None:
     assert "WRITE_API_TOKEN" not in config
     assert "MEDICHAIN_CONFIG" in app
     assert "Authorization" in app
+    assert "personal_sign" in app
+    assert "Connect Wallet" in html
+    assert "apiToken" not in html
     assert "sessionStorage" not in app
     assert "localStorage" not in app
     assert "API_BASE_URL" in build_config
@@ -56,10 +61,15 @@ def assert_env_template() -> None:
         "GENLAYER_NETWORK=",
         "GENLAYER_ACCOUNT_NAME=",
         "GENLAYER_KEYSTORE_PASSWORD=",
+        "MEDICHAIN_WALLET_AUTH_REQUIRED=true",
+        "DATABASE_URL=",
+        "JWT_SECRET=",
+        "MEDICHAIN_AUTH_DOMAIN=",
+        "MEDICHAIN_AUTH_URI=",
+        "MEDICHAIN_AUTH_CHAIN_ID=4221",
+        "MEDICHAIN_ADMIN_WALLETS=",
         "ALLOWED_ORIGINS=",
         "ALLOWED_HOSTS=",
-        "API_TOKENS=",
-        "MEDICHAIN_REQUIRE_WRITE_AUTH=true",
         "MEDICHAIN_STATE_PATH=",
         "API_BASE_URL=",
     ]
@@ -88,6 +98,8 @@ def assert_deployment_config() -> None:
 def assert_python_parses() -> None:
     for path in [
         "medichain/backend/config.py",
+        "medichain/backend/auth_store.py",
+        "medichain/backend/wallet_auth.py",
         "medichain/backend/genlayer_client.py",
         "medichain/backend/main.py",
         "medichain/backend/persistence.py",
