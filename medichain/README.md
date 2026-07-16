@@ -293,16 +293,18 @@ npx -y genlayer@0.39.2 deploy \
   --args "$TREASURE_ADDRESS" \
   --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
 
-npx -y genlayer@0.39.2 schema 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
-npx -y genlayer@0.39.2 call 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50 get_treasury_address
+npx -y genlayer@0.39.2 schema 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
+npx -y genlayer@0.39.2 call 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b get_treasury_address
+npx -y genlayer@0.39.2 call 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b get_owner
 ```
 
 Current corrected Bradbury deploy:
 
-- Contract: `0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`
+- Contract: `0x8900308F73a6A7302C6B958F27D5d3dB149aE82b`
 - Receipt result: `ACCEPTED`, `AGREE`, `FINISHED_WITH_RETURN`
 - Schema: retrieved successfully
 - `get_treasury_address`: read successfully
+- `get_owner`: returns the Render relayer address
 
 ### Application-level bugs found and fixed
 
@@ -368,7 +370,7 @@ etc. is what the pinned GenLayer adapter does.
 ## Deploying to GenLayer Bradbury
 
 The production contract is already deployed at
-`0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`. Verify the adapter before any
+`0x8900308F73a6A7302C6B958F27D5d3dB149aE82b`. Verify the adapter before any
 future redeploy:
 
 1. Run the repository's Bradbury check:
@@ -377,7 +379,7 @@ future redeploy:
    ```
 2. Verify the deployed schema:
    ```bash
-   npx -y genlayer@0.39.2 schema 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
+   npx -y genlayer@0.39.2 schema 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
    ```
 3. Deploy only `contract/genlayer_adapter.py` as the single-file
    contract. The local `medichain_contract.py` remains the FastAPI test
@@ -416,11 +418,12 @@ cd tests && pytest -v
 
 ## Production deployment
 
-The production API uses restricted CORS and host allowlists, bearer-token
-authentication for every write, the deployed Bradbury contract for durable
-state, bounded request concurrency, and read-after-write contract responses.
-The frontend receives only its public `API_BASE_URL`; signing keys and API
-tokens are backend secrets.
+The production API uses restricted CORS and host allowlists, one-time wallet
+signature authentication, revocable JWT sessions, role authorization, the
+owner-restricted Bradbury contract for durable state, bounded request
+concurrency, and read-after-write contract responses. The frontend receives
+only public API and Bradbury network configuration; signing keys, JWT secrets,
+and database credentials remain Render-only.
 
 Use the root `Dockerfile` or `render.yaml` for the backend and
 `frontend/vercel.json` for the static frontend. The complete environment
