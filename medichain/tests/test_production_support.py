@@ -63,7 +63,16 @@ def production_environment(**overrides):
         "GENLAYER_ACCOUNT_NAME": "medichain-production",
         "ALLOWED_ORIGINS": "https://app.example.com",
         "ALLOWED_HOSTS": "api.example.com",
-        "API_TOKENS": "t" * 32,
+        "MEDICHAIN_WALLET_AUTH_REQUIRED": "true",
+        "DATABASE_URL": "postgresql://user:password@db.example.com:5432/medichain",
+        "JWT_SECRET": "j" * 64,
+        "JWT_ISSUER": "medichain-api",
+        "JWT_AUDIENCE": "medichain-web",
+        "MEDICHAIN_AUTH_DOMAIN": "app.example.com",
+        "MEDICHAIN_AUTH_URI": "https://app.example.com",
+        "MEDICHAIN_AUTH_CHAIN_ID": "4221",
+        "MEDICHAIN_ADMIN_WALLETS": "0x1111111111111111111111111111111111111111",
+        "MEDICHAIN_REGULATOR_WALLETS": "0x2222222222222222222222222222222222222222",
         "PRIVATE_KEY": "ab" * 32,
         "GENLAYER_KEYSTORE_PASSWORD": "password",
     }
@@ -86,24 +95,26 @@ def test_production_rejects_wildcard_cors():
         assert_raises(RuntimeError, load_settings)
 
 
-def test_production_rejects_missing_auth_token():
-    with environment(**production_environment(API_TOKENS=None)):
+def test_production_rejects_missing_database():
+    with environment(**production_environment(DATABASE_URL=None)):
         assert_raises(RuntimeError, load_settings)
 
 
-def test_production_rejects_disabled_write_auth():
-    with environment(**production_environment(MEDICHAIN_REQUIRE_WRITE_AUTH="false")):
+def test_production_rejects_disabled_wallet_auth():
+    with environment(**production_environment(MEDICHAIN_WALLET_AUTH_REQUIRED="false")):
         assert_raises(RuntimeError, load_settings)
 
 
 def test_valid_production_settings():
-    tokens = ("a" * 32, "b" * 32)
-    with environment(**production_environment(API_TOKENS=",".join(tokens))):
+    with environment(**production_environment()):
         settings = load_settings()
         assert settings.backend_mode == "genlayer"
         assert settings.allowed_origins == ("https://app.example.com",)
         assert settings.allowed_hosts == ("api.example.com",)
-        assert settings.api_tokens == tokens
+        assert settings.auth_chain_id == 4221
+        assert settings.admin_wallets == (
+            "0x1111111111111111111111111111111111111111",
+        )
 
 
 def test_production_rejects_wildcard_host():
@@ -112,11 +123,39 @@ def test_production_rejects_wildcard_host():
 
 
 def test_production_rejects_short_credentials():
-    with environment(**production_environment(API_TOKENS="short")):
+    with environment(**production_environment(JWT_SECRET="short")):
         assert_raises(RuntimeError, load_settings)
     with environment(**production_environment(PRIVATE_KEY="not-a-private-key")):
         assert_raises(RuntimeError, load_settings)
     with environment(**production_environment(GENLAYER_KEYSTORE_PASSWORD="short")):
+        assert_raises(RuntimeError, load_settings)
+
+
+def test_production_rejects_non_postgres_auth_store():
+    with environment(**production_environment(DATABASE_URL="sqlite:///auth.db")):
+        assert_raises(RuntimeError, load_settings)
+
+
+def test_production_rejects_wrong_wallet_chain():
+    with environment(**production_environment(MEDICHAIN_AUTH_CHAIN_ID="1")):
+        assert_raises(RuntimeError, load_settings)
+
+
+def test_production_rejects_auth_origin_mismatch():
+    with environment(
+        **production_environment(MEDICHAIN_AUTH_URI="https://other.example.com")
+    ):
+        assert_raises(RuntimeError, load_settings)
+
+
+def test_production_requires_admin_wallet():
+    with environment(**production_environment(MEDICHAIN_ADMIN_WALLETS=None)):
+        assert_raises(RuntimeError, load_settings)
+
+
+def test_jwt_secret_cannot_reuse_blockchain_private_key():
+    key = "ab" * 32
+    with environment(**production_environment(PRIVATE_KEY=key, JWT_SECRET=key)):
         assert_raises(RuntimeError, load_settings)
 
 
