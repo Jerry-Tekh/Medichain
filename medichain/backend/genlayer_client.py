@@ -10,10 +10,13 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shlex
 import shutil
 import subprocess
+import sys
 import threading
+import time
 
 from medichain_contract import IntegrityCheckError
 
@@ -61,17 +64,27 @@ class GenLayerCliGateway:
             return json.dumps(value)
         return str(value)
 
-    def _run_process(self, cmd, stdin=None, extra_env=None):
+    def _process_environment(self, extra_env=None):
         process_env = os.environ.copy()
         for secret_name in ("PRIVATE_KEY", "API_TOKENS", "GENLAYER_KEYSTORE_PASSWORD"):
             process_env.pop(secret_name, None)
         process_env.update({"NO_COLOR": "1", "FORCE_COLOR": "0", "NO_UPDATE_NOTIFIER": "1"})
         process_env.update(extra_env or {})
+        return process_env
+
+    def _raise_process_error(self, stdout: str, stderr: str):
+        diagnostics = f"{stdout}\n{stderr}".strip()
+        contract_error = self._extract_contract_error(diagnostics)
+        if contract_error:
+            raise GenLayerContractError(contract_error)
+        raise GenLayerGatewayError(f"GenLayer CLI failed: {diagnostics[-1200:]}")
+
+    def _run_process(self, cmd, stdin=None, extra_env=None):
         try:
             result = subprocess.run(
                 cmd,
                 input=stdin,
-                env=process_env,
+                env=self._process_environment(extra_env),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -83,16 +96,83 @@ class GenLayerCliGateway:
                 f"GenLayer CLI timed out after {self.timeout_seconds} seconds"
             ) from exc
         if result.returncode != 0:
-            diagnostics = f"{result.stdout}\n{result.stderr}".strip()
-            contract_error = self._extract_contract_error(diagnostics)
-            if contract_error:
-                raise GenLayerContractError(contract_error)
-            raise GenLayerGatewayError(f"GenLayer CLI failed: {diagnostics[-1200:]}")
+            self._raise_process_error(result.stdout, result.stderr)
 
         # genlayer-cli writes the contract result to stdout and progress,
         # warnings, and spinner status to stderr. Parsing the combined streams
         # corrupts otherwise valid JSON/object results.
         return result.stdout.strip() or result.stderr.strip()
+
+    def _run_process_streamed(self, cmd, stdin=None, extra_env=None, output_log=None):
+        """Run a long CLI operation while durably teeing its public output."""
+        log_path = Path(output_log) if output_log else None
+        if log_path:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._process_environment(extra_env),
+        )
+        if stdin is not None:
+            process.stdin.write(stdin.encode("utf-8"))
+            process.stdin.close()
+
+        stdout_chunks = []
+        stderr_chunks = []
+        started_at = time.monotonic()
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+        selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+        log_file = log_path.open("wb", buffering=0) if log_path else None
+
+        try:
+            while selector.get_map():
+                remaining = self.timeout_seconds - (time.monotonic() - started_at)
+                if remaining <= 0:
+                    process.kill()
+                    process.wait()
+                    raise GenLayerGatewayError(
+                        f"GenLayer CLI timed out after {self.timeout_seconds} seconds"
+                    )
+                for key, _ in selector.select(timeout=min(1, remaining)):
+                    chunk = os.read(key.fileobj.fileno(), 4096)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    if key.data == "stdout":
+                        stdout_chunks.append(chunk)
+                        target = getattr(sys.stdout, "buffer", sys.stdout)
+                    else:
+                        stderr_chunks.append(chunk)
+                        target = getattr(sys.stderr, "buffer", sys.stderr)
+                    target.write(chunk)
+                    target.flush()
+                    if log_file:
+                        log_file.write(chunk)
+                        os.fsync(log_file.fileno())
+            returncode = process.wait()
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
+        finally:
+            selector.close()
+            if log_file:
+                log_file.close()
+
+        stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
+        stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
+        if returncode != 0:
+            self._raise_process_error(stdout, stderr)
+        return stdout.strip() or stderr.strip()
 
     def _extract_contract_error(self, output: str) -> str:
         normalized = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)

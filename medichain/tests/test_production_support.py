@@ -361,6 +361,29 @@ def test_cli_subprocess_environment_excludes_application_secrets():
     assert "GENLAYER_KEYSTORE_PASSWORD" not in captured
 
 
+def test_streamed_cli_output_is_returned_and_persisted():
+    gateway = GenLayerCliGateway("0x1234")
+    with tempfile.TemporaryDirectory() as tmp:
+        log_path = Path(tmp) / "deploy.log"
+        output = gateway._run_process_streamed(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys;"
+                    "print('Contract Address: 0x' + ('12' * 20), flush=True);"
+                    "print('AGREE', file=sys.stderr, flush=True)"
+                ),
+            ],
+            output_log=log_path,
+        )
+
+        persisted = log_path.read_text(encoding="utf-8")
+        assert "Contract Address: 0x" in output
+        assert "Contract Address: 0x" in persisted
+        assert "AGREE" in persisted
+
+
 def main() -> int:
     tests = [value for name, value in globals().items() if name.startswith("test_") and callable(value)]
     for test in tests:

@@ -8,6 +8,7 @@ import re
 import secrets
 import sys
 import tempfile
+from datetime import datetime, timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,14 @@ def extract_contract_address(output: str) -> str:
     return matches[-1]
 
 
+def deployment_log_path() -> Path:
+    configured = os.getenv("MEDICHAIN_DEPLOY_LOG", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return ROOT / ".deploy" / f"bradbury-{timestamp}.log"
+
+
 def main() -> int:
     private_key = required_environment("PRIVATE_KEY")
     treasury_address = required_environment("TREASURE_ADDRESS")
@@ -58,6 +67,8 @@ def main() -> int:
     fees = os.getenv("GENLAYER_CLI_FEES", DEFAULT_FEES).strip()
     password = os.getenv("GENLAYER_KEYSTORE_PASSWORD") or secrets.token_hex(32)
     contract_path = ROOT / "contract" / "genlayer_adapter.py"
+    deploy_log = deployment_log_path()
+    print(f"Deployment progress log: {deploy_log}", flush=True)
 
     original_home = os.environ.get("HOME")
     original_ethers_module = os.environ.get("GENLAYER_ETHERS_MODULE")
@@ -82,7 +93,7 @@ def main() -> int:
                 timeout_seconds=600,
             )
             gateway._ensure_cli_ready()
-            deploy_output = gateway._run_process(
+            gateway._run_process_streamed(
                 [
                     *gateway.cli_command,
                     "deploy",
@@ -96,7 +107,9 @@ def main() -> int:
                     treasury_address,
                 ],
                 password + "\n",
+                output_log=deploy_log,
             )
+            deploy_output = deploy_log.read_text(encoding="utf-8", errors="replace")
             if "FINISHED_WITH_RETURN" not in deploy_output or "AGREE" not in deploy_output:
                 raise RuntimeError(
                     "deployment did not report AGREE and FINISHED_WITH_RETURN"
