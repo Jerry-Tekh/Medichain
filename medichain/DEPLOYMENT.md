@@ -124,9 +124,10 @@ curl -i -X OPTIONS \
   https://medichain-q34c.onrender.com/api/auth/challenge
 ```
 
-`/api/health` confirms the process is running. `/api/ready` performs a
-read-only Bradbury call and is the Render health-check path. The CORS
-preflight must allow only the Vercel origin.
+`/api/health` confirms the process is running. `/api/ready` checks Postgres,
+reads the Bradbury treasury and owner, and requires the owner to match the
+configured relayer. It is the Render health-check path. The CORS preflight
+must allow only the Vercel origin.
 
 Then open the Vercel application and complete one wallet login:
 
