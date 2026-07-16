@@ -57,8 +57,6 @@ class Settings:
     backend_mode: str
     allowed_origins: tuple[str, ...]
     allowed_hosts: tuple[str, ...]
-    require_write_auth: bool
-    api_tokens: tuple[str, ...]
     wallet_auth_required: bool
     auth_database_url: str
     jwt_secret: str
@@ -151,6 +149,8 @@ class Settings:
             raise RuntimeError(
                 f"JWT_SECRET must contain at least {JWT_SECRET_MIN_LENGTH} characters"
             )
+        if self.is_production and self.jwt_secret == self.genlayer_private_key:
+            raise RuntimeError("JWT_SECRET must be different from PRIVATE_KEY")
         if not self.jwt_issuer.strip() or not self.jwt_audience.strip():
             raise RuntimeError("JWT_ISSUER and JWT_AUDIENCE must not be empty")
         if self.is_production:
@@ -160,6 +160,26 @@ class Settings:
                 raise RuntimeError("production DATABASE_URL must use PostgreSQL")
             if not self.auth_domain.strip() or not self.auth_uri.strip():
                 raise RuntimeError("MEDICHAIN_AUTH_DOMAIN and MEDICHAIN_AUTH_URI are required")
+            auth_url = urlparse(self.auth_uri)
+            if (
+                auth_url.scheme != "https"
+                or auth_url.netloc != self.auth_domain
+                or auth_url.path not in {"", "/"}
+                or auth_url.params
+                or auth_url.query
+                or auth_url.fragment
+                or auth_url.username
+                or auth_url.password
+            ):
+                raise RuntimeError(
+                    "MEDICHAIN_AUTH_URI must be the HTTPS origin matching MEDICHAIN_AUTH_DOMAIN"
+                )
+            if self.auth_uri not in self.allowed_origins:
+                raise RuntimeError("MEDICHAIN_AUTH_URI must be present in ALLOWED_ORIGINS")
+            if not self.admin_wallets:
+                raise RuntimeError("MEDICHAIN_ADMIN_WALLETS must include at least one wallet")
+            if self.auth_chain_id != 4221:
+                raise RuntimeError("production wallet authentication must use Bradbury chain ID 4221")
             if not self.auth_uri.startswith("https://"):
                 raise RuntimeError("MEDICHAIN_AUTH_URI must use HTTPS in production")
         if not 60 <= self.auth_challenge_ttl_seconds <= 900:
@@ -220,8 +240,6 @@ def load_settings() -> Settings:
     backend_mode = os.getenv("MEDICHAIN_BACKEND_MODE", "local").strip().lower()
     allowed_origins = _origins(os.getenv("ALLOWED_ORIGINS", ",".join(DEFAULT_LOCAL_ORIGINS)))
     allowed_hosts = _csv(os.getenv("ALLOWED_HOSTS", ",".join(DEFAULT_LOCAL_HOSTS)))
-    api_tokens = _csv(os.getenv("API_TOKENS", ""))
-    require_write_auth = _bool_env("MEDICHAIN_REQUIRE_WRITE_AUTH", environment == "production")
     wallet_auth_required = _bool_env(
         "MEDICHAIN_WALLET_AUTH_REQUIRED",
         environment == "production",
@@ -245,8 +263,6 @@ def load_settings() -> Settings:
         backend_mode=backend_mode,
         allowed_origins=allowed_origins,
         allowed_hosts=allowed_hosts,
-        require_write_auth=require_write_auth,
-        api_tokens=api_tokens,
         wallet_auth_required=wallet_auth_required,
         auth_database_url=database_url,
         jwt_secret=os.getenv(
