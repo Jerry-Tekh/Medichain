@@ -72,6 +72,15 @@ def main() -> int:
 
     original_home = os.environ.get("HOME")
     original_ethers_module = os.environ.get("GENLAYER_ETHERS_MODULE")
+    deploy_environment = {}
+    if (
+        cli_command.split()[0].endswith("npx")
+        and original_home
+        and not os.getenv("npm_config_cache")
+    ):
+        npm_cache = Path(original_home) / ".npm"
+        if npm_cache.is_dir():
+            deploy_environment["npm_config_cache"] = str(npm_cache)
     if not original_ethers_module:
         resolver = GenLayerCliGateway(
             contract_address="0x" + ("00" * 20),
@@ -107,6 +116,7 @@ def main() -> int:
                     treasury_address,
                 ],
                 password + "\n",
+                extra_env=deploy_environment,
                 output_log=deploy_log,
             )
             deploy_output = deploy_log.read_text(encoding="utf-8", errors="replace")
