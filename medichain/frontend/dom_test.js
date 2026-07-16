@@ -44,6 +44,52 @@ async function loadPage() {
   // would provide it.
   dom.window.fetch = fetch;
   dom.window.Headers = Headers;
+  dom.window.ethereum = {
+    request: async ({ method }) => {
+      if (method === "eth_chainId") return "0x107d";
+      if (method === "eth_requestAccounts") {
+        return ["0x4444444444444444444444444444444444444444"];
+      }
+      if (method === "personal_sign") return "0x" + "11".repeat(65);
+      throw new Error(`unexpected wallet method ${method}`);
+    },
+    on: () => {},
+  };
+  dom.window.HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+    this.returnValue = "confirm";
+    setTimeout(() => this.dispatchEvent(new dom.window.Event("close")), 0);
+  };
+
+  const realFetch = dom.window.fetch;
+  dom.window.fetch = async (url, options = {}) => {
+    if (String(url).endsWith("/api/auth/challenge")) {
+      return new Response(JSON.stringify({
+        challenge_id: "dom-test-challenge-001",
+        message: "MediChain sign-in challenge",
+        expires_at: Math.floor(Date.now() / 1000) + 300,
+        chain_id: 4221,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (String(url).endsWith("/api/auth/verify")) {
+      return new Response(JSON.stringify({
+        access_token: "dom-test-session",
+        token_type: "bearer",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: {
+          address: "0x4444444444444444444444444444444444444444",
+          role: "sponsor",
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (String(url).endsWith("/api/auth/logout")) {
+      return new Response(JSON.stringify({ status: "signed_out" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return realFetch(url, options);
+  };
 
   // Manually inject app.js the same way <script src="app.js"> would, since
   // runScripts + external <script src> file:// loading is unreliable in
@@ -85,6 +131,12 @@ async function submitForm(dom, formId, values) {
   const dotClass = doc.getElementById("healthDot").className;
   assert(dotClass.includes("dot-ok"), `health dot shows backend as reachable (got class="${dotClass}")`);
 
+  // ---- wallet sign-in enables authenticated forms ----
+  doc.getElementById("connectWalletBtn").dispatchEvent(new dom.window.Event("click", { bubbles: true }));
+  await sleep(300);
+  assert(doc.getElementById("walletStatus").textContent.includes("0x4444"), "wallet address appears after sign-in");
+  assert(doc.getElementById("walletRole").textContent === "sponsor", "wallet role appears after sign-in");
+
   // ---- Register Trial form: real submit, real backend round trip ----
   await submitForm(dom, "registerForm", {
     trial_id: "DOMTEST-001",
@@ -92,7 +144,6 @@ async function submitForm(dom, formId, values) {
     primary_hypothesis: "Drug X reduces mortality",
     primary_endpoints: "overall survival at 24 months",
     expected_sample_size: "2000",
-    sponsor_wallet: "0x4444444444444444444444444444444444444444",
     integrity_bond: "500",
   });
   const registerOut = doc.getElementById("registerOutput").textContent;
@@ -126,7 +177,6 @@ async function submitForm(dom, formId, values) {
   // ---- Whistleblower flag form ----
   await submitForm(dom, "flagForm", {
     trial_id: "DOMTEST-001",
-    submitter: "dom-test-whistleblower",
     description: "reported via automated DOM test",
     evidence_url: "",
   });
@@ -175,8 +225,9 @@ async function submitForm(dom, formId, values) {
     "detail row shows the real LLM-generated summary text, not a placeholder"
   );
   assert(
-    detailRow.textContent.includes("dom-test-whistleblower"),
-    "detail row shows the real whistleblower submitter name"
+    detailRow.textContent.includes("0x0000000000000000000000000000000000000001")
+      || detailRow.textContent.includes("0x4444444444444444444444444444444444444444"),
+    "detail row shows the authenticated wallet as whistleblower submitter"
   );
   // toggle closed again -- IMPORTANT: refreshTrials() just rebuilt the
   // tbody, so the earlier `detailsBtn` reference is now a detached node
@@ -197,7 +248,6 @@ async function submitForm(dom, formId, values) {
     primary_hypothesis: "x",
     primary_endpoints: "y",
     expected_sample_size: "10",
-    sponsor_wallet: "0x5555555555555555555555555555555555555555",
     integrity_bond: "10",
   });
   await sleep(400);
