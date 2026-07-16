@@ -307,6 +307,28 @@ def test_signer_secrets_are_not_passed_in_process_arguments():
     assert "GENLAYER_ETHERS_MODULE" in invocations[-1][2]
 
 
+def test_npx_cli_resolves_its_cached_ethers_module():
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        package_root = home / ".npm" / "_npx" / "cache-key" / "node_modules"
+        cli_entry = package_root / "genlayer" / "dist" / "index.js"
+        ethers_entry = package_root / "ethers" / "lib.esm" / "index.js"
+        binary = package_root / ".bin" / "genlayer"
+        cli_entry.parent.mkdir(parents=True)
+        ethers_entry.parent.mkdir(parents=True)
+        binary.parent.mkdir(parents=True)
+        cli_entry.write_text("", encoding="utf-8")
+        ethers_entry.write_text("", encoding="utf-8")
+        binary.symlink_to(cli_entry)
+
+        with environment(HOME=str(home)):
+            gateway = GenLayerCliGateway(
+                "0x1234",
+                cli_command="npx -y genlayer@0.39.2",
+            )
+            assert gateway._ethers_module_path() == str(ethers_entry)
+
+
 def test_cli_subprocess_environment_excludes_application_secrets():
     gateway = GenLayerCliGateway("0x1234")
     captured = {}

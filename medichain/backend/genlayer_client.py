@@ -119,6 +119,12 @@ class GenLayerCliGateway:
             for argument in self.cli_command[1:]
             if argument.endswith((".js", ".mjs", ".cjs"))
         )
+        npm_cache = Path.home() / ".npm" / "_npx"
+        if npm_cache.is_dir():
+            candidates.extend(
+                executable.resolve()
+                for executable in npm_cache.glob("*/node_modules/.bin/genlayer")
+            )
         for candidate in candidates:
             if candidate.parent.name != "dist":
                 continue
