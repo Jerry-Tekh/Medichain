@@ -29,6 +29,41 @@ PRIVATE_KEY=<Bradbury relayer private key>
 GENLAYER_KEYSTORE_PASSWORD=<independent random secret, at least 8 characters>
 ```
 
+If the existing Render service was created manually instead of from
+`render.yaml`, set the complete block below in **Environment**:
+
+```env
+MEDICHAIN_ENV=production
+MEDICHAIN_BACKEND_MODE=genlayer
+MEDICHAIN_CONTRACT_ADDRESS=0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
+GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
+GENLAYER_NETWORK=testnet-bradbury
+GENLAYER_ACCOUNT_NAME=medichain-production
+GENLAYER_CLI_COMMAND=genlayer
+GENLAYER_TIMEOUT_SECONDS=600
+MEDICHAIN_WALLET_AUTH_REQUIRED=true
+DATABASE_URL=<Render Postgres internal connection string>
+JWT_SECRET=<at least 64 random characters>
+JWT_ISSUER=medichain-api
+JWT_AUDIENCE=medichain-web
+MEDICHAIN_AUTH_DOMAIN=medichain-blush.vercel.app
+MEDICHAIN_AUTH_URI=https://medichain-blush.vercel.app
+MEDICHAIN_AUTH_CHAIN_ID=4221
+MEDICHAIN_AUTH_CHALLENGE_TTL_SECONDS=300
+MEDICHAIN_AUTH_SESSION_TTL_SECONDS=3600
+MEDICHAIN_ADMIN_WALLETS=<comma-separated admin wallet addresses>
+ALLOWED_ORIGINS=https://medichain-blush.vercel.app
+ALLOWED_HOSTS=medichain-q34c.onrender.com
+PRIVATE_KEY=<Bradbury relayer private key>
+GENLAYER_KEYSTORE_PASSWORD=<independent random secret, at least 8 characters>
+```
+
+Then confirm **Settings** uses branch `main`, Dockerfile path `./Dockerfile`,
+repository-root context, and automatic deploys on commit. Select **Manual
+Deploy > Deploy latest commit** after saving the environment. If the release
+fails, the first startup error in the Render logs names the missing or invalid
+variable.
+
 Create a Render Postgres database in the same region as the web service and use
 its internal connection string for `DATABASE_URL`. Production startup rejects
 SQLite because the container filesystem is replaceable.
