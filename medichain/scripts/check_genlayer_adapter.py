@@ -23,6 +23,8 @@ def main() -> int:
     assert "@gl.contract" not in source, "Bradbury runner does not expose gl.contract"
     assert "gl.UserError" not in source, "pinned Bradbury runner does not expose gl.UserError"
     assert "raise Exception(message)" in source, "contract guards must use a supported exception"
+    assert "self.owner = gl.message.sender_account" in source, "deployer must become relayer owner"
+    assert "only the MediChain relayer can perform writes" in source
     assert "emit_raw_event" not in source, "adapter should not depend on uncertain event API"
     assert "= TreeMap()" not in source, "bare TreeMap initializers block Bradbury deployment"
 
@@ -81,6 +83,18 @@ def main() -> int:
     }
     assert arg_annotations["sponsor_wallet"] == "str", "TreeMap sponsor storage uses string addresses"
     assert arg_annotations["integrity_bond"] == "u256", "integrity_bond must be u256"
+
+    write_methods = {"register_trial", "submit_results", "resolve_appeal", "submit_flag"}
+    for method in contract.body:
+        if not isinstance(method, ast.FunctionDef) or method.name not in write_methods:
+            continue
+        first_call = method.body[0]
+        assert (
+            isinstance(first_call, ast.Expr)
+            and isinstance(first_call.value, ast.Call)
+            and isinstance(first_call.value.func, ast.Attribute)
+            and first_call.value.func.attr == "_require_owner"
+        ), f"{method.name} must require the configured relayer owner first"
 
     print("GenLayer adapter Bradbury checks passed")
     return 0
