@@ -1,108 +1,129 @@
 # MediChain Bradbury Deployment Runbook
 
-This note records the GenLayer Bradbury deployment fix and the verification
-commands used from this workspace.
-
 ## Network
 
-- CLI package: `genlayer@0.39.2`
+- CLI: `genlayer@0.39.2`
 - Network alias: `testnet-bradbury`
-- Network name: `Genlayer Bradbury Testnet`
 - Chain ID: `4221`
 - RPC: `https://rpc-bradbury.genlayer.com`
 
-## Current Production Deployment
+## Current Production Contract
 
-- Contract: `0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`
-- Consensus result: `AGREE`
-- Execution result: `FINISHED_WITH_RETURN`
+- Contract: `0x8900308F73a6A7302C6B958F27D5d3dB149aE82b`
+- Deployment transaction:
+  `0x354c5015c1b84714a18be959c2fc9b71bbd410f7b317d1291c90116d561e1bd4`
+- Receipt: `ACCEPTED`
+- Consensus: `AGREE`
+- Execution: `FINISHED_WITH_RETURN`
 - Schema: verified
+- Owner: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 - Treasury: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 
-This deployment replaces the initial contract because the pinned runner does
-not expose the earlier runner-specific user-error class.
+This deployment stores the Render relayer as the contract owner. Every
+state-changing method checks `gl.message.sender_address` against that owner,
+so callers cannot bypass the API's wallet authentication and role rules.
 
-## Initial Schema-Fix Deployment
+## Runner Requirements
 
-- Transaction: `0xff12089804b1773c0858495e194e8b206c32b4e69e4ffe0ad2c37eb4adc0d18f`
-- Contract: `0x9c6D4d30F89f8701C8a4E63902880D52C5269523`
-- Receipt status: `ACCEPTED`
-- Consensus result: `AGREE`
-- Execution result: `FINISHED_WITH_RETURN`
+The contract must start with:
 
-## Root Causes Fixed
-
-1. The adapter used `py-genlayer:test`, which Bradbury rejects.
-2. The adapter used `@gl.contract`, but Bradbury exposed `gl.Contract`.
-3. Storage included `TreeMap[str, dict]`, which blocks schema-safe deploys.
-4. Storage included plain `int` values, which Bradbury rejected for persisted fields.
-5. The constructor assigned `TreeMap[str, ...]()` values, which Bradbury rejected at runtime.
-
-## Adapter Rules
-
-1. The first line must pin the runner:
-
-   ```python
-   # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
-   ```
-
-2. Do not use `py-genlayer:test`, `py-genlayer:latest`, or unversioned `py-genlayer`.
-3. Use `class MediChain(gl.Contract)` for the current Bradbury runner.
-4. Store structured arrays/objects as JSON strings inside primitive `TreeMap` values.
-5. Use `bigint` or sized integers for persisted numeric fields.
-6. Use `u256` for money-like values such as integrity bonds.
-7. Leave annotated `TreeMap` fields to Bradbury storage initialization.
-
-## Local Verification
-
-Run these checks before deploy:
-
-```bash
-python3 medichain/scripts/check_genlayer_adapter.py
-python3 -m py_compile \
-  medichain/contract/genlayer_adapter.py \
-  medichain/scripts/check_genlayer_adapter.py \
-  medichain/tests/test_integration.py
+```python
+# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 ```
 
-The standalone check verifies the pinned runner, the `gl.Contract` class,
-schema-safe storage annotations, and absence of constructor-level `TreeMap`
-assignments.
+Do not use `py-genlayer:test`, `py-genlayer:latest`, or an unversioned runner.
+For this pinned Bradbury runner:
 
-## Deploy Command
+- declare the contract with `class MediChain(gl.Contract)`
+- use `gl.message.sender_address`, not `sender_account`
+- use primitive `TreeMap` values
+- use `bigint` or sized integer aliases for stored integers
+- use `u256` for money-like values
+- leave annotated `TreeMap` fields to storage initialization
 
-The successful Bradbury deploy used explicit fee/timeunit allocation:
+## Deployment
+
+Store `PRIVATE_KEY` and `TREASURE_ADDRESS` in the git-ignored `.env.local`,
+then run:
 
 ```bash
 set -a
 . ./.env.local
 set +a
 
-npx -y genlayer@0.39.2 deploy \
-  --contract medichain/contract/genlayer_adapter.py \
-  --args "$TREASURE_ADDRESS" \
-  --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
+GENLAYER_CLI_COMMAND='npx -y genlayer@0.39.2' \
+  python3 medichain/scripts/deploy_bradbury.py
 ```
 
-The earlier default-fee retry produced `LEADER_TIMEOUT`; the explicit allocation
-allowed validators to accept the deployment.
+The script:
 
-## Schema Verification
+1. validates secret formats without printing them
+2. creates an isolated temporary GenLayer keystore
+3. reuses the local npm package cache
+4. streams public deployment output to `medichain/.deploy/`
+5. requires `AGREE` and `FINISHED_WITH_RETURN`
+6. verifies the deployed schema
+7. reads and reports treasury and owner addresses
 
-```bash
-npx -y genlayer@0.39.2 schema 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
+The explicit validator allocation is:
+
+```json
+{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}
 ```
 
-The schema call returned constructor parameter `treasury_address` and all public
-view/write methods, including `register_trial`, `submit_results`,
-`resolve_appeal`, `submit_flag`, `list_trials`, and `get_treasury_address`.
-
-## Read Verification
+## Verification
 
 ```bash
+python3 medichain/scripts/check_genlayer_adapter.py
+
+npx -y genlayer@0.39.2 schema \
+  0x8900308F73a6A7302C6B958F27D5d3dB149aE82b \
+  --rpc https://rpc-bradbury.genlayer.com
+
 npx -y genlayer@0.39.2 call \
-  0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50 \
-  get_treasury_address
+  0x8900308F73a6A7302C6B958F27D5d3dB149aE82b \
+  get_owner \
+  --rpc https://rpc-bradbury.genlayer.com
+
+npx -y genlayer@0.39.2 call \
+  0x8900308F73a6A7302C6B958F27D5d3dB149aE82b \
+  get_treasury_address \
+  --rpc https://rpc-bradbury.genlayer.com
 ```
 
-The read call completed successfully against the deployed Bradbury contract.
+The schema must contain `register_trial`, `submit_results`, `submit_flag`,
+`resolve_appeal`, `get_owner`, and `get_treasury_address`.
+
+## Failed Ownership Attempt
+
+Transaction
+`0x741f5a84226038174f5d9fae3e22f45c02872ae167ed5fd71f8ebf04db930d7b`
+reached `ACCEPTED` and `AGREE` but ended as `FINISHED_WITH_ERROR`. Its execution
+trace showed:
+
+```text
+AttributeError: 'MessageType' object has no attribute 'sender_account'
+```
+
+The unusable candidate address was
+`0xD884E048B0671b898A242764a72Fb7A0c65D1d69`. The contract was corrected to
+use the pinned runner's `sender_address` field before the successful deployment.
+
+Inspect future failures with:
+
+```bash
+npx -y genlayer@0.39.2 trace <transaction-hash> \
+  --rpc https://rpc-bradbury.genlayer.com
+```
+
+An accepted transaction is not sufficient. Never configure Render with a new
+address until execution is `FINISHED_WITH_RETURN` and schema/read checks pass.
+
+## Previous Contracts
+
+- `0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`: schema-safe adapter without
+  owner-restricted writes
+- `0x9c6D4d30F89f8701C8a4E63902880D52C5269523`: initial schema-fix deployment
+
+They are retained only as deployment history and must not be used by the
+production API.
