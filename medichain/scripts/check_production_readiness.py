@@ -22,6 +22,8 @@ def assert_backend_config() -> None:
     assert "/api/auth/challenge" in main
     assert "WalletAuthService" in main
     assert "GenLayerCliGateway" in main
+    assert 'contract.call("get_owner")' in main
+    assert "contract.signer_address" in main
     assert "PersistentMediChainContract" in main
     assert "production requires MEDICHAIN_BACKEND_MODE=genlayer" in config
     assert "ALLOWED_ORIGINS must not contain '*'" in config

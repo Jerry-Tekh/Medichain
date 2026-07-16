@@ -262,6 +262,7 @@ def health():
 
 @app.get("/api/ready")
 def ready():
+    owner = None
     try:
         if not auth_store.ping():
             raise RuntimeError("wallet auth database returned no result")
@@ -269,6 +270,16 @@ def ready():
             treasury = contract.call("get_treasury_address")
             if not treasury:
                 raise IntegrityCheckError("Bradbury treasury read returned no value")
+            owner = contract.call("get_owner")
+            if not owner:
+                raise IntegrityCheckError("Bradbury owner read returned no value")
+            if (
+                settings.is_production
+                and str(owner).lower() != contract.signer_address
+            ):
+                raise IntegrityCheckError(
+                    "Bradbury contract owner does not match the configured relayer"
+                )
         else:
             contract.list_trials()
     except (IntegrityCheckError, GenLayerGatewayError, RuntimeError) as exc:
@@ -278,6 +289,7 @@ def ready():
         "status": "ready",
         "backend_mode": settings.backend_mode,
         "contract_address": settings.genlayer_contract_address or None,
+        "owner_address": str(owner).lower() if owner else None,
     }
 
 

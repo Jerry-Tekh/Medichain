@@ -292,7 +292,7 @@ def test_signer_secrets_are_not_passed_in_process_arguments():
 
     def capture(cmd, stdin=None, extra_env=None):
         invocations.append((cmd, stdin, extra_env))
-        return "ok"
+        return "GenLayer signer ready: 0x1111111111111111111111111111111111111111"
 
     gateway._run_process = capture
     gateway._ensure_cli_ready()
@@ -304,6 +304,7 @@ def test_signer_secrets_are_not_passed_in_process_arguments():
     assert setup_payload["private_key"] == private_key
     assert setup_payload["password"] == password
     assert "GENLAYER_ETHERS_MODULE" in invocations[-1][2]
+    assert gateway.signer_address == "0x1111111111111111111111111111111111111111"
 
 
 def test_npx_cli_resolves_its_cached_ethers_module():

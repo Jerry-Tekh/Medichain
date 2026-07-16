@@ -51,6 +51,7 @@ class GenLayerCliGateway:
         self.fees = fees
         self.keystore_password = keystore_password
         self.timeout_seconds = timeout_seconds
+        self.signer_address = ""
         self._ready = False
         self._ready_lock = threading.Lock()
         self._write_lock = threading.RLock()
@@ -227,7 +228,7 @@ class GenLayerCliGateway:
                 if not self.keystore_password:
                     raise GenLayerGatewayError("GENLAYER_KEYSTORE_PASSWORD is required to import the signer")
                 setup_script = Path(__file__).with_name("setup_genlayer_account.mjs")
-                self._run_process(
+                setup_output = self._run_process(
                     ["node", str(setup_script)],
                     json.dumps({
                         "private_key": self.private_key,
@@ -237,6 +238,15 @@ class GenLayerCliGateway:
                     }),
                     {"GENLAYER_ETHERS_MODULE": self._ethers_module_path()},
                 )
+                signer_match = re.search(
+                    r"GenLayer signer ready:\s*(0x[0-9a-fA-F]{40})",
+                    setup_output,
+                )
+                if not signer_match:
+                    raise GenLayerGatewayError(
+                        "GenLayer signer setup returned no wallet address"
+                    )
+                self.signer_address = signer_match.group(1).lower()
             else:
                 if self.network:
                     self._run_process([*self.cli_command, "network", "set", self.network])
