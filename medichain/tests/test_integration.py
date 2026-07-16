@@ -96,6 +96,7 @@ def test_full_journey_fraud_case():
     trial = r.json()
     assert trial["status"] == "active"
     assert trial["bond_status"] == "held"
+    assert trial["sponsor"] == "0x0000000000000000000000000000000000000001"
     assert "diagnostic concordance" in trial["protocol_snapshot"].lower()
 
     # 2. Submit results -- the published paper reports a completely
@@ -142,6 +143,7 @@ def test_full_journey_fraud_case():
     flag = r.json()
     assert flag["trial_id"] == "THERANOS-001"
     assert flag["status"] == "open"
+    assert flag["submitter"] == "0x0000000000000000000000000000000000000001"
 
     r = client.get("/api/trial/THERANOS-001/flags")
     assert r.status_code == 200
@@ -159,6 +161,7 @@ def test_full_journey_fraud_case():
     assert resolved["status"] == "resolved_fraud"
     assert resolved["bond_status"] == "slashed"
     assert resolved["appeal_window_open"] is False
+    assert resolved["resolved_by"] == "0x0000000000000000000000000000000000000001"
 
 
 def test_full_journey_legitimate_amendment_not_flagged_as_fraud():
@@ -503,6 +506,8 @@ def test_genlayer_adapter_is_bradbury_schema_ready():
     assert "@gl.contract" not in source
     assert "emit_raw_event" not in source
     assert "= TreeMap()" not in source
+    assert "self.owner = gl.message.sender_account" in source
+    assert "only the MediChain relayer can perform writes" in source
 
     tree = ast.parse(source)
     medichain_class = next(
