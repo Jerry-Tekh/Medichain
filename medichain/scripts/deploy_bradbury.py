@@ -104,10 +104,18 @@ def main() -> int:
                 "--rpc",
                 rpc_url,
             ])
-            for method in ("register_trial", "submit_results", "get_treasury_address"):
+            for method in (
+                "register_trial",
+                "submit_results",
+                "get_treasury_address",
+                "get_owner",
+            ):
                 if method not in schema_output:
                     raise RuntimeError(f"deployed schema is missing {method}")
             treasury_result = gateway.call("get_treasury_address")
+            owner_result = gateway.call("get_owner")
+            if not owner_result:
+                raise RuntimeError("deployed contract returned no relayer owner")
     finally:
         if original_home is None:
             os.environ.pop("HOME", None)
@@ -118,6 +126,7 @@ def main() -> int:
         "network": network,
         "contract_address": contract_address,
         "treasury_address": treasury_result,
+        "owner_address": owner_result,
         "schema_verified": True,
     }, indent=2))
     return 0
