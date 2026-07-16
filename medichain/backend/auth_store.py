@@ -130,6 +130,11 @@ class AuthStore:
             for statement in statements:
                 self._execute(connection, statement)
 
+    def ping(self) -> bool:
+        with self._connection() as connection:
+            row = self._execute(connection, "SELECT 1").fetchone()
+        return bool(row and row[0] == 1)
+
     def create_challenge(
         self,
         challenge_id: str,

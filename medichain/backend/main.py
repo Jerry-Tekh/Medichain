@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "contract"))
 from auth_store import AuthStore  # noqa: E402
@@ -59,6 +59,7 @@ def build_contract_gateway():
 
 
 auth_store = AuthStore(settings.auth_database_url)
+auth_store.initialize()
 auth_service = WalletAuthService(
     store=auth_store,
     jwt_secret=settings.jwt_secret,
@@ -92,7 +93,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_ho
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.allowed_origins),
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
     allow_credentials=False,
     max_age=600,
@@ -153,6 +154,10 @@ ShortText = Annotated[str, Field(min_length=1, max_length=256)]
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")]
 ExternalUrl = Annotated[str, Field(min_length=9, max_length=2048)]
 WalletAddress = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
+
+
+class StrictRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
 def validate_external_https_url(value: str) -> str:
@@ -223,12 +228,12 @@ class SubmitFlagRequest(BaseModel):
         return validate_external_https_url(value) if value else value
 
 
-class WalletChallengeRequest(BaseModel):
+class WalletChallengeRequest(StrictRequestModel):
     address: WalletAddress
     chain_id: int = Field(gt=0, le=2 ** 31)
 
 
-class WalletVerifyRequest(BaseModel):
+class WalletVerifyRequest(StrictRequestModel):
     challenge_id: Annotated[
         str,
         Field(min_length=20, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
@@ -240,7 +245,7 @@ class WalletVerifyRequest(BaseModel):
     ]
 
 
-class WalletRoleRequest(BaseModel):
+class WalletRoleRequest(StrictRequestModel):
     role: Literal["sponsor", "regulator", "admin"]
 
 
@@ -258,15 +263,17 @@ def health():
 @app.get("/api/ready")
 def ready():
     try:
+        if not auth_store.ping():
+            raise RuntimeError("wallet auth database returned no result")
         if settings.backend_mode == "genlayer":
             treasury = contract.call("get_treasury_address")
             if not treasury:
                 raise IntegrityCheckError("Bradbury treasury read returned no value")
         else:
             contract.list_trials()
-    except (IntegrityCheckError, GenLayerGatewayError) as exc:
-        logger.warning("Contract readiness check failed: %s", exc)
-        raise HTTPException(503, "contract gateway unavailable") from exc
+    except (IntegrityCheckError, GenLayerGatewayError, RuntimeError) as exc:
+        logger.warning("Readiness check failed: %s", exc)
+        raise HTTPException(503, "application dependencies are unavailable") from exc
     return {
         "status": "ready",
         "backend_mode": settings.backend_mode,
