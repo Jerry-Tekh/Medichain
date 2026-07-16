@@ -24,13 +24,33 @@ services:
         value: genlayer
       - key: GENLAYER_TIMEOUT_SECONDS
         value: "600"
-      - key: MEDICHAIN_REQUIRE_WRITE_AUTH
+      - key: MEDICHAIN_WALLET_AUTH_REQUIRED
         value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ISSUER
+        value: medichain-api
+      - key: JWT_AUDIENCE
+        value: medichain-web
+      - key: MEDICHAIN_AUTH_DOMAIN
+        value: medichain-blush.vercel.app
+      - key: MEDICHAIN_AUTH_URI
+        value: https://medichain-blush.vercel.app
+      - key: MEDICHAIN_AUTH_CHAIN_ID
+        value: "4221"
+      - key: MEDICHAIN_AUTH_CHALLENGE_TTL_SECONDS
+        value: "300"
+      - key: MEDICHAIN_AUTH_SESSION_TTL_SECONDS
+        value: "3600"
+      - key: MEDICHAIN_ADMIN_WALLETS
+        sync: false
+      - key: MEDICHAIN_REGULATOR_WALLETS
+        sync: false
       - key: ALLOWED_ORIGINS
         sync: false
       - key: ALLOWED_HOSTS
-        sync: false
-      - key: API_TOKENS
         sync: false
       - key: PRIVATE_KEY
         sync: false
