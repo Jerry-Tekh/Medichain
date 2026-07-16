@@ -1,188 +1,153 @@
 # MediChain Production Deployment
 
-MediChain has two runtime modes:
-
-- `local`: persistent JSON-backed simulator for development only.
-- `genlayer`: production mode that proxies API calls to the deployed Bradbury contract.
-
-Production must use `genlayer`. The deployed Bradbury contract is:
+MediChain runs the static frontend on Vercel and the Docker API on Render.
+Production API writes are authorized by wallet-signature sessions and relayed
+to the owner-restricted GenLayer Bradbury contract:
 
 ```text
-0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
+0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
 ```
 
-## Required Backend Environment
+## Render
+
+Deploy the repository root as a Docker service. The checked-in `render.yaml`
+already sets the public and non-secret production configuration for:
+
+- GenLayer Bradbury network, RPC, fees, CLI, and contract address
+- wallet authentication domain, URI, chain ID, and session lifetimes
+- `https://medichain-blush.vercel.app` as the only browser origin
+- `medichain-q34c.onrender.com` as the allowed API host
+- one service instance to serialize writes from the relayer account
+
+Set these five values in the Render dashboard:
 
 ```env
-MEDICHAIN_ENV=production
-MEDICHAIN_BACKEND_MODE=genlayer
-MEDICHAIN_CONTRACT_ADDRESS=0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
-GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
-GENLAYER_NETWORK=testnet-bradbury
-GENLAYER_ACCOUNT_NAME=medichain-production
-GENLAYER_CLI_COMMAND=genlayer
-GENLAYER_CLI_FEES={"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}
-GENLAYER_KEYSTORE_PASSWORD=at-least-eight-random-characters
-PRIVATE_KEY=0x...
-GENLAYER_TIMEOUT_SECONDS=600
-ALLOWED_ORIGINS=https://your-frontend-domain.com
-ALLOWED_HOSTS=your-api-domain.com
-API_TOKENS=at-least-32-random-characters
-MEDICHAIN_REQUIRE_WRITE_AUTH=true
+DATABASE_URL=<Render Postgres internal connection string>
+JWT_SECRET=<at least 64 random characters>
+MEDICHAIN_ADMIN_WALLETS=<comma-separated admin wallet addresses>
+PRIVATE_KEY=<Bradbury relayer private key>
+GENLAYER_KEYSTORE_PASSWORD=<independent random secret, at least 8 characters>
 ```
 
-Generate independent backend secrets with a local secret generator such as:
+Create a Render Postgres database in the same region as the web service and use
+its internal connection string for `DATABASE_URL`. Production startup rejects
+SQLite because the container filesystem is replaceable.
+
+Generate independent secrets locally:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Use separate generated values for `GENLAYER_KEYSTORE_PASSWORD` and
-`API_TOKENS`. The backend imports `PRIVATE_KEY` into the named encrypted
-GenLayer CLI keystore on its first Bradbury request. The setup helper uses
-the CLI's existing `ethers` package, so it adds no runtime dependency. The key
-and password are provided over standard input, not command-line arguments.
-Do not
-expose `PRIVATE_KEY`,
-`GENLAYER_KEYSTORE_PASSWORD`, or `API_TOKENS` to the frontend. Those belong
-only in the backend deployment environment.
+Use different generated values for `JWT_SECRET` and
+`GENLAYER_KEYSTORE_PASSWORD`. `JWT_SECRET` must also differ from `PRIVATE_KEY`.
+The private key must control the deployed contract owner:
 
-`TREASURE_ADDRESS` is only a constructor argument when deploying a new
-contract. It is not needed by this API because the contract is already
-deployed. `MEDICHAIN_CONTRACT_ADDRESS` is the deployed contract address the
-API calls.
+```text
+0x1847d40a1fc2b69101d943f23ea35bd3774889d7
+```
 
-Production startup rejects wildcard or localhost origins/hosts, non-HTTPS
-RPC/origin values, weak API tokens, malformed private keys, a non-Bradbury
-network, disabled write authentication, and local simulator mode.
-
-## Frontend Configuration
-
-Set this environment variable in the frontend deployment:
+Optional regulator wallets can be added later:
 
 ```env
-API_BASE_URL=https://your-api-domain.com
+MEDICHAIN_REGULATOR_WALLETS=0x...,0x...
 ```
 
-`frontend/build-config.js` validates the URL and generates `frontend/config.js`
-during the production build. The frontend reads `window.MEDICHAIN_CONFIG` from
-that generated file.
-For a same-origin development deployment, the checked-in default is enough:
+Never expose `PRIVATE_KEY`, `GENLAYER_KEYSTORE_PASSWORD`, `JWT_SECRET`, or
+`DATABASE_URL` to Vercel. `TREASURE_ADDRESS` is used only when deploying a new
+contract and is not a backend runtime variable.
 
-```js
-window.MEDICHAIN_CONFIG = {
-  API_BASE_URL: window.location.origin,
-};
+## Vercel
+
+Set the Vercel project root to `medichain/frontend` and configure:
+
+```env
+API_BASE_URL=https://medichain-q34c.onrender.com
+WALLET_CHAIN_ID=4221
+WALLET_CHAIN_NAME=GenLayer Bradbury
+WALLET_RPC_URL=https://rpc.testnet-chain.genlayer.com
+WALLET_EXPLORER_URL=https://explorer.testnet-chain.genlayer.com
 ```
 
-For a separate API host, set:
+`API_BASE_URL` is required. The wallet variables have checked-in Bradbury
+defaults, but setting them explicitly keeps Production and Preview builds
+consistent. Redeploy Vercel after changing any build variable.
 
-```js
-window.MEDICHAIN_CONFIG = {
-  API_BASE_URL: "https://your-api-domain.com",
-};
-```
+Users do not enter an application key. They connect an EIP-1193 wallet, review
+the one-time login message, and sign it. The backend verifies the signature,
+creates a short-lived revocable JWT session, and derives the actor identity
+from that session.
 
-Authorized operators enter a write token in the UI. It is kept only in the
-page's JavaScript memory, sent as a bearer token on write requests, and lost
-on reload. It is never included in `config.js`, local storage, or session
-storage.
+## Container
 
-For Vercel, set the project root directory to `medichain/frontend` and add
-`API_BASE_URL` under project environment variables. `vercel.json` runs the
-zero-dependency config build and installs CSP, framing, referrer, MIME, and
-browser-permission response headers.
+The root `Dockerfile`:
 
-## Backend Container
+- pins `genlayer@0.39.2`
+- installs only production Python packages
+- runs as the unprivileged `medichain` user
+- starts one bounded-concurrency Uvicorn worker
 
-Build the backend image from the repository root:
+Build and run it locally with a complete production environment:
 
 ```bash
 docker build -t medichain-api .
-```
-
-Run it with production environment variables:
-
-```bash
 docker run --rm -p 8000:8000 --env-file .env.production medichain-api
 ```
 
-The image installs the pinned `genlayer@0.39.2` CLI at build time, installs
-only production Python packages, runs as the unprivileged `medichain` user,
-and starts one bounded-concurrency Uvicorn worker. One worker is intentional:
-Bradbury writes and the CLI keystore must be serialized within the process.
-The Render Blueprint likewise fixes the service at one instance so separate
-containers cannot race transactions from the same signer.
-
-## Render Backend
-
-The repository includes `render.yaml`. Create a Render Blueprint from the
-repository and set these `sync: false` variables in the Render dashboard:
-
-```env
-ALLOWED_ORIGINS=https://your-vercel-domain.com
-ALLOWED_HOSTS=your-render-domain.onrender.com
-API_TOKENS=<generated-secret>
-PRIVATE_KEY=<your-Bradbury-funded-private-key>
-GENLAYER_KEYSTORE_PASSWORD=<different-generated-secret>
-```
-
-Do not include schemes in `ALLOWED_HOSTS`. For multiple frontend origins or
-API tokens, use comma-separated values. The Bradbury signing account must
-have enough testnet GEN to pay transaction fees.
-
-After the backend is live, set the Vercel frontend variable:
-
-```env
-API_BASE_URL=https://your-render-domain.onrender.com
-```
-
-Redeploy the frontend after changing `API_BASE_URL`, then enter one value from
-`API_TOKENS` into the UI's write-key field.
-
 ## Verification
 
-No-dependency static checks:
+Run the no-install checks before pushing:
 
 ```bash
 python3 medichain/scripts/check_production_readiness.py
 python3 medichain/scripts/check_genlayer_adapter.py
+python3 medichain/tests/test_production_support.py
 python3 -m py_compile \
+  medichain/backend/auth_store.py \
   medichain/backend/config.py \
   medichain/backend/genlayer_client.py \
   medichain/backend/main.py \
   medichain/backend/persistence.py \
   medichain/backend/start.py \
-  medichain/contract/genlayer_adapter.py \
-  medichain/scripts/check_production_readiness.py
+  medichain/backend/wallet_auth.py \
+  medichain/contract/genlayer_adapter.py
 ```
 
-With dependencies installed in the deployment environment:
+After Render redeploys:
 
 ```bash
-pytest medichain/tests/test_integration.py
+curl -fsS https://medichain-q34c.onrender.com/api/health
+curl -fsS https://medichain-q34c.onrender.com/api/ready
+curl -i -X OPTIONS \
+  -H 'Origin: https://medichain-blush.vercel.app' \
+  -H 'Access-Control-Request-Method: POST' \
+  https://medichain-q34c.onrender.com/api/auth/challenge
 ```
 
-Runtime checks after deployment:
+`/api/health` confirms the process is running. `/api/ready` performs a
+read-only Bradbury call and is the Render health-check path. The CORS
+preflight must allow only the Vercel origin.
 
-```bash
-curl -fsS https://your-api-domain.com/api/health
-curl -fsS https://your-api-domain.com/api/ready
-```
+Then open the Vercel application and complete one wallet login:
 
-`/api/health` proves that the API process started. `/api/ready` performs a
-read-only `get_treasury_address` call against the deployed Bradbury contract.
-Use `/api/ready` for the platform health check.
+1. Connect the intended wallet.
+2. Approve switching to Bradbury chain ID `4221`.
+3. Review and sign the displayed one-time message.
+4. Confirm the connected wallet and assigned role appear.
+5. Register a test trial as a sponsor or admin.
+6. Confirm the trial appears after refreshing the dashboard.
 
-## Safety Checks Enforced at Startup
+## Startup Guards
 
-When `MEDICHAIN_ENV=production`, the API refuses to boot if:
+Production refuses to start when:
 
-- `MEDICHAIN_BACKEND_MODE` is not `genlayer`
-- `ALLOWED_ORIGINS` contains `*`
-- `ALLOWED_ORIGINS` uses localhost
-- `ALLOWED_HOSTS` contains `*` or localhost
-- `MEDICHAIN_REQUIRE_WRITE_AUTH` is disabled
-- write authentication is enabled but `API_TOKENS` is empty
-- GenLayer mode is missing `MEDICHAIN_CONTRACT_ADDRESS`
-- production GenLayer writes are missing `PRIVATE_KEY` or `GENLAYER_KEYSTORE_PASSWORD`
+- the backend mode is not `genlayer`
+- CORS origins or allowed hosts are wildcard, localhost, or malformed
+- wallet authentication is disabled
+- `DATABASE_URL` is absent or is not PostgreSQL
+- `JWT_SECRET` is shorter than 64 characters or reuses `PRIVATE_KEY`
+- the auth URI does not match the configured HTTPS frontend origin
+- no admin wallet is configured
+- the wallet chain is not Bradbury chain ID `4221`
+- the contract address, RPC, relayer key, or keystore password is invalid
+- the GenLayer network is not `testnet-bradbury`
