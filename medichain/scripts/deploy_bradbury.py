@@ -60,6 +60,13 @@ def main() -> int:
     contract_path = ROOT / "contract" / "genlayer_adapter.py"
 
     original_home = os.environ.get("HOME")
+    original_ethers_module = os.environ.get("GENLAYER_ETHERS_MODULE")
+    if not original_ethers_module:
+        resolver = GenLayerCliGateway(
+            contract_address="0x" + ("00" * 20),
+            cli_command=cli_command,
+        )
+        os.environ["GENLAYER_ETHERS_MODULE"] = resolver._ethers_module_path()
     try:
         with tempfile.TemporaryDirectory(prefix="medichain-deploy-") as temporary_home:
             os.environ["HOME"] = temporary_home
@@ -121,6 +128,10 @@ def main() -> int:
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = original_home
+        if original_ethers_module is None:
+            os.environ.pop("GENLAYER_ETHERS_MODULE", None)
+        else:
+            os.environ["GENLAYER_ETHERS_MODULE"] = original_ethers_module
 
     print(json.dumps({
         "network": network,
