@@ -66,7 +66,7 @@ class GenLayerCliGateway:
 
     def _process_environment(self, extra_env=None):
         process_env = os.environ.copy()
-        for secret_name in ("PRIVATE_KEY", "API_TOKENS", "GENLAYER_KEYSTORE_PASSWORD"):
+        for secret_name in ("PRIVATE_KEY", "GENLAYER_KEYSTORE_PASSWORD"):
             process_env.pop(secret_name, None)
         process_env.update({"NO_COLOR": "1", "FORCE_COLOR": "0", "NO_UPDATE_NOTIFIER": "1"})
         process_env.update(extra_env or {})

@@ -85,7 +85,6 @@ def test_production_rejects_local_mode():
         MEDICHAIN_ENV="production",
         MEDICHAIN_BACKEND_MODE="local",
         ALLOWED_ORIGINS="https://app.example.com",
-        API_TOKENS="token",
     ):
         assert_raises(RuntimeError, load_settings)
 
@@ -349,7 +348,6 @@ def test_cli_subprocess_environment_excludes_application_secrets():
     try:
         with environment(
             PRIVATE_KEY="private",
-            API_TOKENS="token",
             GENLAYER_KEYSTORE_PASSWORD="password",
         ):
             gateway._run_process(["genlayer", "network", "set", "testnet-bradbury"])
@@ -357,7 +355,6 @@ def test_cli_subprocess_environment_excludes_application_secrets():
         genlayer_client.subprocess.run = original_run
 
     assert "PRIVATE_KEY" not in captured
-    assert "API_TOKENS" not in captured
     assert "GENLAYER_KEYSTORE_PASSWORD" not in captured
 
 

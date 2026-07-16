@@ -13,7 +13,7 @@ services:
       - key: MEDICHAIN_BACKEND_MODE
         value: genlayer
       - key: MEDICHAIN_CONTRACT_ADDRESS
-        value: 0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50
+        value: 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
       - key: GENLAYER_RPC_URL
         value: https://rpc-bradbury.genlayer.com
       - key: GENLAYER_NETWORK
@@ -46,12 +46,10 @@ services:
         value: "3600"
       - key: MEDICHAIN_ADMIN_WALLETS
         sync: false
-      - key: MEDICHAIN_REGULATOR_WALLETS
-        sync: false
       - key: ALLOWED_ORIGINS
-        sync: false
+        value: https://medichain-blush.vercel.app
       - key: ALLOWED_HOSTS
-        sync: false
+        value: medichain-q34c.onrender.com
       - key: PRIVATE_KEY
         sync: false
       - key: GENLAYER_KEYSTORE_PASSWORD
