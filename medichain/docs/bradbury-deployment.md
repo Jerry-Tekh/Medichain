@@ -9,14 +9,14 @@
 
 ## Current Production Contract
 
-- Contract: `0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213`
+- Contract: `0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C`
 - Deployment transaction:
-  `0x9a713c008bd184b4b7ba06ca18936eb8b17c0ecd6b45bb1f4af23fff821bbda3`
+  `0x7fb9af63bf2238f0a7f5d5a1aa08b772088a9a38253ff97166b65673e6beeba0`
 - Receipt: `ACCEPTED`
 - Consensus: `AGREE`
 - Execution: `FINISHED_WITH_RETURN`
 - Schema: verified
-- Signed deployment ceiling: `3595033311711300` wei (about `0.0036 GEN`)
+- Signed deployment ceiling: `2949336047864250` wei (about `0.00295 GEN`)
 - Owner: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 - Treasury: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 
@@ -73,9 +73,24 @@ adds a 25 percent gas-limit buffer and refuses to sign when
 Trial registration does not ask GenVM to render the large ClinicalTrials.gov
 page. The backend fetches the official API record, creates a canonical
 snapshot, and the contract deterministically validates its NCT identifier and
-required protocol fields before storage. This keeps registration within normal
-validator consensus without the Bradbury web timeout that blocked the previous
-contract design.
+required protocol fields before storage.
+
+Result submission also receives bounded backend snapshots for the current
+registry, publication, and optional preprint. The backend enforces public HTTPS
+destinations, validates redirects, caps responses, and sanitizes documents to
+text. The contract binds snapshots to their submitted URLs and runs only the
+clinical assessment through `prompt_comparative`. This preserves substantive
+validator consensus while avoiding the `LEADER_TIMEOUT` caused by GenVM web
+rendering.
+
+Live workflow verification on this deployment:
+
+- Registration transaction:
+  `0x49b55c3c721af208824a8778fb0e2bcb94e185162e416b7ece2828abd70af416`
+  (`AGREE`, `FINISHED_WITH_RETURN`, ceiling about `0.000375 GEN`)
+- Report transaction:
+  `0x62e306e8abe9272a390bd99ba062328ebc5773a2e7ba3c0ee8bcdd902376f8c4`
+  (`AGREE`, `FINISHED_WITH_RETURN`, ceiling about `0.00137 GEN`)
 
 ## Verification
 
@@ -83,16 +98,16 @@ contract design.
 python3 medichain/scripts/check_genlayer_adapter.py
 
 npx -y genlayer@0.39.2 schema \
-  0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 \
+  0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 \
+  0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C \
   get_owner \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 \
+  0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C \
   get_treasury_address \
   --rpc https://rpc-bradbury.genlayer.com
 ```

@@ -5,7 +5,7 @@ Production API writes are authorized by wallet-signature sessions and relayed
 to the owner-restricted GenLayer Bradbury contract:
 
 ```text
-0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
+0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
 ```
 
 ## Render
@@ -36,7 +36,7 @@ If the existing Render service was created manually instead of from
 ```env
 MEDICHAIN_ENV=production
 MEDICHAIN_BACKEND_MODE=genlayer
-MEDICHAIN_CONTRACT_ADDRESS=0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
+MEDICHAIN_CONTRACT_ADDRESS=0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
 GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
 GENLAYER_NETWORK=testnet-bradbury
 GENLAYER_ACCOUNT_NAME=medichain-production
@@ -187,6 +187,15 @@ to the contract. The contract deterministically validates the NCT identifier,
 study title, enrollment, and primary outcomes before storing the immutable
 registration snapshot. This avoids Bradbury web-render timeouts during
 registration while retaining validator consensus over the stored state.
+
+Result submission uses the same bounded snapshot boundary. The backend fetches
+the current ClinicalTrials.gov record plus the publication and optional
+preprint, rejects private or non-global destinations and unsupported content,
+caps each response, and strips HTML to readable text. The contract binds each
+snapshot to its submitted URL and runs the integrity assessment through
+Bradbury's comparative LLM equivalence principle. Validators still reach
+substantive consensus on the clinical assessment without waiting for GenVM web
+rendering, which previously produced `LEADER_TIMEOUT`.
 
 ## Startup Guards
 
