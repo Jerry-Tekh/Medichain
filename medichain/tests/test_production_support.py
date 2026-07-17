@@ -284,6 +284,90 @@ def test_register_trial_passes_backend_snapshot_to_contract():
     assert captured["args"][-1] == '{"registry_id":"NCT04280705"}'
 
 
+def test_html_document_snapshot_prefers_article_text():
+    gateway = GenLayerCliGateway("0x1234")
+    snapshot = gateway._document_snapshot_from_body(
+        "https://journal.example.org/article",
+        "https://journal.example.org/article",
+        "text/html",
+        b"""
+        <html>
+          <head><style>hidden</style><script>ignored()</script></head>
+          <body>
+            Navigation that should not be preferred.
+            <article>
+              <h1>Trial Results</h1>
+              <p>Remdesivir shortened median recovery time.</p>
+              <p>No unexpected safety signal was detected.</p>
+            </article>
+          </body>
+        </html>
+        """,
+    )
+    parsed = json.loads(snapshot)
+    assert parsed["source_url"] == "https://journal.example.org/article"
+    assert "Remdesivir shortened median recovery time" in parsed["text"]
+    assert "Navigation that should not be preferred" not in parsed["text"]
+    assert "ignored()" not in parsed["text"]
+
+
+def test_document_snapshot_rejects_unsupported_content_type():
+    gateway = GenLayerCliGateway("0x1234")
+    assert_raises(
+        GenLayerGatewayError,
+        lambda: gateway._document_snapshot_from_body(
+            "https://journal.example.org/article.pdf",
+            "https://journal.example.org/article.pdf",
+            "application/pdf",
+            b"%PDF",
+        ),
+    )
+
+
+def test_document_snapshot_rejects_non_global_destination():
+    gateway = GenLayerCliGateway("0x1234")
+    assert_raises(
+        GenLayerGatewayError,
+        lambda: gateway._validate_public_https_url(
+            "https://127.0.0.1/publication"
+        ),
+    )
+
+
+def test_submit_results_passes_bounded_snapshots_to_contract():
+    gateway = GenLayerCliGateway("0x1234")
+    captured = {}
+    gateway.get_trial = lambda trial_id: {
+        "trial_id": trial_id,
+        "registry_url": "https://clinicaltrials.gov/study/NCT04280705",
+    }
+    gateway._fetch_protocol_snapshot = lambda _url: '{"registry_id":"NCT04280705"}'
+    gateway._fetch_document_snapshot = lambda url: json.dumps({
+        "source_url": url,
+        "resolved_url": url,
+        "content_type": "text/html",
+        "text": f"snapshot for {url}",
+    })
+    gateway.write = lambda method, args=None: captured.update(
+        {"method": method, "args": args}
+    )
+    gateway.get_report = lambda report_id: {"report_id": report_id}
+
+    result = gateway.submit_results(
+        "TRIAL-001",
+        "REPORT-001",
+        "https://pubmed.ncbi.nlm.nih.gov/32445440/",
+        "",
+    )
+
+    assert result == {"report_id": "REPORT-001"}
+    assert captured["method"] == "submit_results"
+    assert len(captured["args"]) == 7
+    assert captured["args"][4] == '{"registry_id":"NCT04280705"}'
+    assert "pubmed.ncbi.nlm.nih.gov" in captured["args"][5]
+    assert captured["args"][6] == ""
+
+
 def test_genlayer_success_ignores_stderr_diagnostics():
     gateway = GenLayerCliGateway("0x1234")
 

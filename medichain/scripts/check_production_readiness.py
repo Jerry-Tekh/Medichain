@@ -16,6 +16,7 @@ def read(relative: str) -> str:
 def assert_backend_config() -> None:
     main = read("medichain/backend/main.py")
     config = read("medichain/backend/config.py")
+    genlayer_client = read("medichain/backend/genlayer_client.py")
     assert 'allow_origins=["*"]' not in main
     assert "allow_origins=list(settings.allowed_origins)" in main
     assert "current_wallet" in main
@@ -25,6 +26,9 @@ def assert_backend_config() -> None:
     assert 'contract.call("get_owner")' in main
     assert "contract.signer_address" in main
     assert "PersistentMediChainContract" in main
+    assert "_fetch_document_snapshot" in genlayer_client
+    assert "DOCUMENT_RESPONSE_LIMIT_BYTES = 2_000_000" in genlayer_client
+    assert "_validate_public_https_url" in genlayer_client
     assert "production requires MEDICHAIN_BACKEND_MODE=genlayer" in config
     assert "ALLOWED_ORIGINS must not contain '*'" in config
     assert "DATABASE_URL is required in production" in config

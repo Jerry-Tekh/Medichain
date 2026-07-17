@@ -151,6 +151,26 @@ def _validate_protocol_snapshot(raw_json: str, source_url: str) -> str:
     return json.dumps(snapshot, sort_keys=True)
 
 
+def _validate_document_snapshot(
+    raw_json: str,
+    source_url: str,
+    field_name: str,
+) -> str:
+    try:
+        data = json.loads(_clean_json_response(raw_json))
+    except Exception:
+        _fail(f"[EXPECTED] {field_name} snapshot must be valid JSON")
+        return ""
+    if not isinstance(data, dict):
+        _fail(f"[EXPECTED] {field_name} snapshot must be a JSON object")
+    if str(data.get("source_url", "")).strip() != source_url:
+        _fail(f"[EXPECTED] {field_name} snapshot URL does not match submission")
+    text = str(data.get("text", "")).strip()
+    if not text:
+        _fail(f"[EXPECTED] {field_name} snapshot contains no readable text")
+    return text[:8000]
+
+
 def _clean_flags(value) -> list[dict]:
     if not isinstance(value, list):
         _fail("LLM response flags must be a list")
@@ -406,7 +426,10 @@ class MediChain(gl.Contract):
         trial_id: str,
         report_id: str,
         publication_url: str,
-        preprint_url: str = "",
+        preprint_url: str,
+        current_registry_snapshot_json: str,
+        publication_snapshot_json: str,
+        preprint_snapshot_json: str,
     ) -> None:
         self._require_owner()
         self._require_trial(trial_id)
@@ -424,13 +447,26 @@ class MediChain(gl.Contract):
         hypothesis = self.trial_hypothesis[trial_id]
         endpoints_json = self.trial_endpoints_json[trial_id]
         expected_n = self.trial_expected_n[trial_id]
+        current_registry = _validate_protocol_snapshot(
+            current_registry_snapshot_json,
+            registry_url,
+        )
+        paper = _validate_document_snapshot(
+            publication_snapshot_json,
+            publication_url,
+            "publication",
+        )
+        preprint_text = ""
+        if preprint_url:
+            preprint_text = _validate_document_snapshot(
+                preprint_snapshot_json,
+                preprint_url,
+                "preprint",
+            )
+        elif preprint_snapshot_json.strip():
+            _fail("[EXPECTED] preprint snapshot requires a preprint URL")
 
         def run_integrity_analysis() -> str:
-            current_registry = gl.nondet.web.render(registry_url, mode="text")
-            paper = gl.nondet.web.render(publication_url, mode="text")
-            preprint_text = ""
-            if preprint_url:
-                preprint_text = gl.nondet.web.render(preprint_url, mode="text")
             prompt = _build_integrity_prompt(
                 protocol_snapshot,
                 current_registry,

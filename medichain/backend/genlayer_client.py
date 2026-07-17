@@ -6,6 +6,8 @@ responses back into the JSON shape expected by the frontend.
 """
 
 import ast
+from html.parser import HTMLParser
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -13,13 +15,14 @@ import re
 import selectors
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from medichain_contract import IntegrityCheckError
 
@@ -41,6 +44,66 @@ RETRYABLE_TRANSPORT_MARKERS = (
     "service unavailable",
     "gateway timeout",
 )
+DOCUMENT_RESPONSE_LIMIT_BYTES = 2_000_000
+DOCUMENT_SNAPSHOT_LIMIT_CHARS = 8_000
+ALLOWED_DOCUMENT_CONTENT_TYPES = frozenset({
+    "application/json",
+    "application/ld+json",
+    "application/xhtml+xml",
+    "application/xml",
+    "text/html",
+    "text/plain",
+    "text/xml",
+})
+
+
+class _DocumentTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._ignored_depth = 0
+        self._focus_depth = 0
+        self._all_parts = []
+        self._focused_parts = []
+
+    def handle_starttag(self, tag, attrs):
+        normalized = tag.lower()
+        if normalized in {"script", "style", "noscript", "svg"}:
+            self._ignored_depth += 1
+            return
+        if normalized in {"main", "article"}:
+            self._focus_depth += 1
+
+    def handle_endtag(self, tag):
+        normalized = tag.lower()
+        if normalized in {"script", "style", "noscript", "svg"}:
+            self._ignored_depth = max(0, self._ignored_depth - 1)
+            return
+        if normalized in {"main", "article"} and self._focus_depth:
+            self._focus_depth -= 1
+
+    def handle_data(self, data):
+        if self._ignored_depth:
+            return
+        text = data.strip()
+        if not text:
+            return
+        self._all_parts.append(text)
+        if self._focus_depth:
+            self._focused_parts.append(text)
+
+    def text(self) -> str:
+        focused = " ".join(self._focused_parts)
+        return focused if focused else " ".join(self._all_parts)
+
+
+class _ValidatingRedirectHandler(HTTPRedirectHandler):
+    def __init__(self, validator):
+        super().__init__()
+        self._validator = validator
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self._validator(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class GenLayerGatewayError(RuntimeError):
@@ -207,6 +270,119 @@ class GenLayerCliGateway:
                 "ClinicalTrials.gov returned an invalid protocol record"
             )
         return self._protocol_snapshot_from_record(record, source_url)
+
+    def _validate_public_https_url(self, source_url: str) -> str:
+        parsed = urlparse(source_url)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme != "https"
+            or not hostname
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+            or hostname == "localhost"
+            or hostname.endswith(".localhost")
+        ):
+            raise GenLayerGatewayError(
+                "document source must be a public HTTPS URL"
+            )
+        try:
+            addresses = {
+                item[4][0]
+                for item in socket.getaddrinfo(
+                    hostname,
+                    parsed.port or 443,
+                    type=socket.SOCK_STREAM,
+                )
+            }
+        except OSError as exc:
+            raise GenLayerGatewayError(
+                "document source hostname could not be resolved"
+            ) from exc
+        if not addresses or any(
+            not ipaddress.ip_address(address).is_global
+            for address in addresses
+        ):
+            raise GenLayerGatewayError(
+                "document source resolved to a private or non-global address"
+            )
+        return source_url
+
+    def _document_snapshot_from_body(
+        self,
+        source_url: str,
+        resolved_url: str,
+        content_type: str,
+        body: bytes,
+        charset: str = "utf-8",
+    ) -> str:
+        if content_type not in ALLOWED_DOCUMENT_CONTENT_TYPES:
+            raise GenLayerGatewayError(
+                f"document source returned unsupported content type {content_type}"
+            )
+        try:
+            decoded = body.decode(charset or "utf-8", errors="replace")
+        except LookupError:
+            decoded = body.decode("utf-8", errors="replace")
+        if content_type in {"text/html", "application/xhtml+xml"}:
+            extractor = _DocumentTextExtractor()
+            extractor.feed(decoded)
+            decoded = extractor.text()
+        text = re.sub(r"\s+", " ", decoded).strip()
+        if not text:
+            raise GenLayerGatewayError(
+                "document source returned no readable text"
+            )
+        return json.dumps({
+            "source_url": source_url,
+            "resolved_url": resolved_url,
+            "content_type": content_type,
+            "text": text[:DOCUMENT_SNAPSHOT_LIMIT_CHARS],
+        }, sort_keys=True, separators=(",", ":"))
+
+    def _fetch_document_snapshot(self, source_url: str) -> str:
+        self._validate_public_https_url(source_url)
+        opener = build_opener(
+            _ValidatingRedirectHandler(self._validate_public_https_url)
+        )
+        request = Request(
+            source_url,
+            headers={
+                "Accept": (
+                    "text/html,text/plain,application/xhtml+xml,"
+                    "application/json,application/xml;q=0.9"
+                ),
+                "User-Agent": "MediChain/2.0",
+            },
+        )
+        try:
+            with opener.open(
+                request,
+                timeout=min(self.timeout_seconds, 30),
+            ) as response:
+                resolved_url = self._validate_public_https_url(
+                    response.geturl()
+                )
+                content_type = response.headers.get_content_type().lower()
+                charset = response.headers.get_content_charset() or "utf-8"
+                body = response.read(DOCUMENT_RESPONSE_LIMIT_BYTES + 1)
+        except GenLayerGatewayError:
+            raise
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            raise GenLayerGatewayError(
+                "document source fetch failed"
+            ) from exc
+        if len(body) > DOCUMENT_RESPONSE_LIMIT_BYTES:
+            raise GenLayerGatewayError(
+                "document source response exceeded 2 MB"
+            )
+        return self._document_snapshot_from_body(
+            source_url,
+            resolved_url,
+            content_type,
+            body,
+            charset,
+        )
 
     def _process_environment(self, extra_env=None):
         process_env = os.environ.copy()
@@ -698,7 +874,32 @@ class GenLayerCliGateway:
 
     def submit_results(self, trial_id, report_id, publication_url, preprint_url=""):
         with self._write_lock:
-            self.write("submit_results", [trial_id, report_id, publication_url, preprint_url or ""])
+            trial = self.get_trial(trial_id)
+            registry_url = str(trial.get("registry_url", "")).strip()
+            if not registry_url:
+                raise GenLayerGatewayError(
+                    "trial contains no ClinicalTrials.gov registry URL"
+                )
+            current_registry_snapshot = self._fetch_protocol_snapshot(
+                registry_url
+            )
+            publication_snapshot = self._fetch_document_snapshot(
+                publication_url
+            )
+            preprint_snapshot = (
+                self._fetch_document_snapshot(preprint_url)
+                if preprint_url
+                else ""
+            )
+            self.write("submit_results", [
+                trial_id,
+                report_id,
+                publication_url,
+                preprint_url or "",
+                current_registry_snapshot,
+                publication_snapshot,
+                preprint_snapshot,
+            ])
             return self.get_report(report_id)
 
     def resolve_appeal(self, trial_id, decision, resolver):
