@@ -9,13 +9,14 @@
 
 ## Current Production Contract
 
-- Contract: `0x8900308F73a6A7302C6B958F27D5d3dB149aE82b`
+- Contract: `0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213`
 - Deployment transaction:
-  `0x354c5015c1b84714a18be959c2fc9b71bbd410f7b317d1291c90116d561e1bd4`
+  `0x9a713c008bd184b4b7ba06ca18936eb8b17c0ecd6b45bb1f4af23fff821bbda3`
 - Receipt: `ACCEPTED`
 - Consensus: `AGREE`
 - Execution: `FINISHED_WITH_RETURN`
 - Schema: verified
+- Signed deployment ceiling: `3595033311711300` wei (about `0.0036 GEN`)
 - Owner: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 - Treasury: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 
@@ -65,11 +66,16 @@ The script:
 6. verifies the deployed schema
 7. reads and reports treasury and owner addresses
 
-The explicit validator allocation is:
+Every deployment and write is signed by the bounded transaction helper. It
+adds a 25 percent gas-limit buffer and refuses to sign when
+`gas * gasPrice + value` exceeds `500000000000000000` wei (`0.5 GEN`).
 
-```json
-{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}
-```
+Trial registration does not ask GenVM to render the large ClinicalTrials.gov
+page. The backend fetches the official API record, creates a canonical
+snapshot, and the contract deterministically validates its NCT identifier and
+required protocol fields before storage. This keeps registration within normal
+validator consensus without the Bradbury web timeout that blocked the previous
+contract design.
 
 ## Verification
 
@@ -77,16 +83,16 @@ The explicit validator allocation is:
 python3 medichain/scripts/check_genlayer_adapter.py
 
 npx -y genlayer@0.39.2 schema \
-  0x8900308F73a6A7302C6B958F27D5d3dB149aE82b \
+  0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x8900308F73a6A7302C6B958F27D5d3dB149aE82b \
+  0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 \
   get_owner \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x8900308F73a6A7302C6B958F27D5d3dB149aE82b \
+  0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 \
   get_treasury_address \
   --rpc https://rpc-bradbury.genlayer.com
 ```

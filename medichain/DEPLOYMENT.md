@@ -5,7 +5,7 @@ Production API writes are authorized by wallet-signature sessions and relayed
 to the owner-restricted GenLayer Bradbury contract:
 
 ```text
-0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
+0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
 ```
 
 ## Render
@@ -13,7 +13,8 @@ to the owner-restricted GenLayer Bradbury contract:
 Deploy the repository root as a Docker service. The checked-in `render.yaml`
 already sets the public and non-secret production configuration for:
 
-- GenLayer Bradbury network, RPC, fees, CLI, and contract address
+- GenLayer Bradbury network, RPC, transaction-cost ceiling, CLI, and contract
+  address
 - wallet authentication domain, URI, chain ID, and session lifetimes
 - `https://medichain-blush.vercel.app` as the only browser origin
 - `medichain-q34c.onrender.com` as the allowed API host
@@ -35,11 +36,12 @@ If the existing Render service was created manually instead of from
 ```env
 MEDICHAIN_ENV=production
 MEDICHAIN_BACKEND_MODE=genlayer
-MEDICHAIN_CONTRACT_ADDRESS=0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
+MEDICHAIN_CONTRACT_ADDRESS=0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
 GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
 GENLAYER_NETWORK=testnet-bradbury
 GENLAYER_ACCOUNT_NAME=medichain-production
 GENLAYER_CLI_COMMAND=genlayer
+GENLAYER_MAX_TRANSACTION_COST_WEI=500000000000000000
 GENLAYER_TIMEOUT_SECONDS=600
 MEDICHAIN_WALLET_AUTH_REQUIRED=true
 DATABASE_URL=<Render Postgres internal connection string>
@@ -91,6 +93,12 @@ MEDICHAIN_REGULATOR_WALLETS=0x...,0x...
 Never expose `PRIVATE_KEY`, `GENLAYER_KEYSTORE_PASSWORD`, `JWT_SECRET`, or
 `DATABASE_URL` to Vercel. `TREASURE_ADDRESS` is used only when deploying a new
 contract and is not a backend runtime variable.
+
+Every deployment and contract write is signed through the bounded transaction
+runner. It adds a gas-limit safety buffer, calculates `gas * gasPrice + value`
+before signing, and refuses any transaction whose signed ceiling exceeds
+`500000000000000000` wei (`0.5 GEN`). Bradbury reads retry transient RPC
+transport failures without resubmitting writes.
 
 ## Vercel
 
@@ -172,6 +180,13 @@ Then open the Vercel application and complete one wallet login:
 4. Confirm the connected wallet and assigned role appear.
 5. Register a test trial as a sponsor or admin.
 6. Confirm the trial appears after refreshing the dashboard.
+
+Trial registration fetches the official ClinicalTrials.gov API record in the
+backend, reduces it to a canonical protocol snapshot, and sends that snapshot
+to the contract. The contract deterministically validates the NCT identifier,
+study title, enrollment, and primary outcomes before storing the immutable
+registration snapshot. This avoids Bradbury web-render timeouts during
+registration while retaining validator consensus over the stored state.
 
 ## Startup Guards
 

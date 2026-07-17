@@ -288,23 +288,35 @@ failure caused by the old `py-genlayer:test` runner header, schema-hostile
 Live Bradbury verification from this workspace:
 
 ```bash
-npx -y genlayer@0.39.2 deploy \
-  --contract medichain/contract/genlayer_adapter.py \
-  --args "$TREASURE_ADDRESS" \
-  --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
+set -a
+. ./.env.local
+set +a
 
-npx -y genlayer@0.39.2 schema 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
-npx -y genlayer@0.39.2 call 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b get_treasury_address
-npx -y genlayer@0.39.2 call 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b get_owner
+GENLAYER_CLI_COMMAND='npx -y genlayer@0.39.2' \
+  python3 medichain/scripts/deploy_bradbury.py
+
+npx -y genlayer@0.39.2 schema 0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
+npx -y genlayer@0.39.2 call 0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 get_treasury_address
+npx -y genlayer@0.39.2 call 0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213 get_owner
 ```
 
 Current corrected Bradbury deploy:
 
-- Contract: `0x8900308F73a6A7302C6B958F27D5d3dB149aE82b`
+- Contract: `0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213`
+- Deployment transaction:
+  `0x9a713c008bd184b4b7ba06ca18936eb8b17c0ecd6b45bb1f4af23fff821bbda3`
 - Receipt result: `ACCEPTED`, `AGREE`, `FINISHED_WITH_RETURN`
 - Schema: retrieved successfully
 - `get_treasury_address`: read successfully
 - `get_owner`: returns the Render relayer address
+- Signed deployment ceiling: about `0.0036 GEN`
+
+The backend fetches the official ClinicalTrials.gov API record and creates a
+canonical protocol snapshot before `register_trial`. The contract validates
+the NCT identifier and required protocol fields deterministically, avoiding
+Bradbury web-render timeouts during registration. All state-changing calls use
+the bounded signer and are refused before signing when their transaction-cost
+ceiling exceeds `0.5 GEN`.
 
 ### Application-level bugs found and fixed
 
@@ -370,7 +382,7 @@ etc. is what the pinned GenLayer adapter does.
 ## Deploying to GenLayer Bradbury
 
 The production contract is already deployed at
-`0x8900308F73a6A7302C6B958F27D5d3dB149aE82b`. Verify the adapter before any
+`0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213`. Verify the adapter before any
 future redeploy:
 
 1. Run the repository's Bradbury check:
@@ -379,18 +391,21 @@ future redeploy:
    ```
 2. Verify the deployed schema:
    ```bash
-   npx -y genlayer@0.39.2 schema 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
+   npx -y genlayer@0.39.2 schema 0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
    ```
 3. Deploy only `contract/genlayer_adapter.py` as the single-file
    contract. The local `medichain_contract.py` remains the FastAPI test
    implementation; the adapter is the deployable GenLayer contract.
-4. Use the Bradbury network and explicit validator allocations:
+4. Load `PRIVATE_KEY` and `TREASURE_ADDRESS` from the ignored `.env.local`
+   file and deploy with the bounded helper:
    ```bash
-   npx -y genlayer@0.39.2 network set testnet-bradbury
-   npx -y genlayer@0.39.2 deploy \
-     --contract contract/genlayer_adapter.py \
-     --args "$TREASURE_ADDRESS" \
-     --fees '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
+   set -a
+   . ../.env.local
+   set +a
+
+   GENLAYER_MAX_TRANSACTION_COST_WEI=500000000000000000 \
+   GENLAYER_CLI_COMMAND='npx -y genlayer@0.39.2' \
+     python3 scripts/deploy_bradbury.py
    ```
 5. Require an accepted receipt, `AGREE` consensus, and
    `FINISHED_WITH_RETURN` before checking schema.
