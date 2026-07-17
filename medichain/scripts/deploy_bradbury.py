@@ -4,7 +4,6 @@
 import json
 import os
 from pathlib import Path
-import re
 import secrets
 import sys
 import tempfile
@@ -15,14 +14,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "contract"))
 
-from config import ADDRESS_PATTERN, PRIVATE_KEY_PATTERN  # noqa: E402
-from genlayer_client import GenLayerCliGateway  # noqa: E402
-
-
-DEFAULT_FEES = (
-    '{"distribution":{"leaderTimeunitsAllocation":"1000",'
-    '"validatorTimeunitsAllocation":"1000","rotations":["0"]}}'
+from config import (  # noqa: E402
+    ADDRESS_PATTERN,
+    MAX_GENLAYER_TRANSACTION_COST_WEI,
+    PRIVATE_KEY_PATTERN,
 )
+from genlayer_client import GenLayerCliGateway  # noqa: E402
 
 
 def required_environment(name: str) -> str:
@@ -30,16 +27,6 @@ def required_environment(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} is required")
     return value
-
-
-def extract_contract_address(output: str) -> str:
-    matches = re.findall(
-        r"Contract Address['\"]?\s*:\s*['\"]?(0x[0-9a-fA-F]{40})",
-        output,
-    )
-    if not matches:
-        raise RuntimeError("deployment output did not contain a contract address")
-    return matches[-1]
 
 
 def deployment_log_path() -> Path:
@@ -64,7 +51,19 @@ def main() -> int:
         "https://rpc-bradbury.genlayer.com",
     ).strip()
     cli_command = os.getenv("GENLAYER_CLI_COMMAND", "genlayer").strip()
-    fees = os.getenv("GENLAYER_CLI_FEES", DEFAULT_FEES).strip()
+    max_transaction_cost_wei = int(os.getenv(
+        "GENLAYER_MAX_TRANSACTION_COST_WEI",
+        str(MAX_GENLAYER_TRANSACTION_COST_WEI),
+    ))
+    if not (
+        0
+        < max_transaction_cost_wei
+        <= MAX_GENLAYER_TRANSACTION_COST_WEI
+    ):
+        raise RuntimeError(
+            "GENLAYER_MAX_TRANSACTION_COST_WEI must be positive and "
+            "no greater than 0.5 GEN"
+        )
     password = os.getenv("GENLAYER_KEYSTORE_PASSWORD") or secrets.token_hex(32)
     contract_path = ROOT / "contract" / "genlayer_adapter.py"
     deploy_log = deployment_log_path()
@@ -72,21 +71,15 @@ def main() -> int:
 
     original_home = os.environ.get("HOME")
     original_ethers_module = os.environ.get("GENLAYER_ETHERS_MODULE")
-    deploy_environment = {}
-    if (
-        cli_command.split()[0].endswith("npx")
-        and original_home
-        and not os.getenv("npm_config_cache")
-    ):
-        npm_cache = Path(original_home) / ".npm"
-        if npm_cache.is_dir():
-            deploy_environment["npm_config_cache"] = str(npm_cache)
+    original_genlayer_js_module = os.environ.get("GENLAYER_JS_MODULE")
+    resolver = GenLayerCliGateway(
+        contract_address="0x" + ("00" * 20),
+        cli_command=cli_command,
+    )
     if not original_ethers_module:
-        resolver = GenLayerCliGateway(
-            contract_address="0x" + ("00" * 20),
-            cli_command=cli_command,
-        )
         os.environ["GENLAYER_ETHERS_MODULE"] = resolver._ethers_module_path()
+    if not original_genlayer_js_module:
+        os.environ["GENLAYER_JS_MODULE"] = resolver._genlayer_js_module_path()
     try:
         with tempfile.TemporaryDirectory(prefix="medichain-deploy-") as temporary_home:
             os.environ["HOME"] = temporary_home
@@ -97,35 +90,29 @@ def main() -> int:
                 account_name="medichain-deployer",
                 private_key=private_key,
                 cli_command=cli_command,
-                fees=fees,
+                max_transaction_cost_wei=max_transaction_cost_wei,
                 keystore_password=password,
                 timeout_seconds=600,
             )
             gateway._ensure_cli_ready()
-            gateway._run_process_streamed(
-                [
-                    *gateway.cli_command,
-                    "deploy",
-                    "--contract",
-                    str(contract_path),
-                    "--rpc",
-                    rpc_url,
-                    "--fees",
-                    fees,
-                    "--args",
-                    treasury_address,
-                ],
-                password + "\n",
-                extra_env=deploy_environment,
-                output_log=deploy_log,
+            deploy_result = gateway.deploy(
+                str(contract_path),
+                [{"__medichain_address__": treasury_address}],
             )
-            deploy_output = deploy_log.read_text(encoding="utf-8", errors="replace")
-            if "FINISHED_WITH_RETURN" not in deploy_output or "AGREE" not in deploy_output:
+            deploy_log.parent.mkdir(parents=True, exist_ok=True)
+            deploy_log.write_text(
+                json.dumps(deploy_result, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            if (
+                deploy_result.get("txExecutionResultName") != "FINISHED_WITH_RETURN"
+                or deploy_result.get("resultName") != "AGREE"
+            ):
                 raise RuntimeError(
                     "deployment did not report AGREE and FINISHED_WITH_RETURN"
                 )
 
-            contract_address = extract_contract_address(deploy_output)
+            contract_address = deploy_result["contractAddress"]
             gateway.contract_address = contract_address
             schema_output = gateway._run_process([
                 *gateway.cli_command,
@@ -155,12 +142,17 @@ def main() -> int:
             os.environ.pop("GENLAYER_ETHERS_MODULE", None)
         else:
             os.environ["GENLAYER_ETHERS_MODULE"] = original_ethers_module
+        if original_genlayer_js_module is None:
+            os.environ.pop("GENLAYER_JS_MODULE", None)
+        else:
+            os.environ["GENLAYER_JS_MODULE"] = original_genlayer_js_module
 
     print(json.dumps({
         "network": network,
         "contract_address": contract_address,
         "treasury_address": treasury_result,
         "owner_address": owner_result,
+        "signed_cost_ceiling_wei": deploy_result["signedCostCeilingWei"],
         "schema_verified": True,
     }, indent=2))
     return 0

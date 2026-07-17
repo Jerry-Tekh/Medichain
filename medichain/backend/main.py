@@ -47,7 +47,7 @@ def build_contract_gateway():
             account_name=settings.genlayer_account_name,
             private_key=settings.genlayer_private_key,
             cli_command=settings.genlayer_cli_command,
-            fees=settings.genlayer_cli_fees,
+            max_transaction_cost_wei=settings.genlayer_max_transaction_cost_wei,
             keystore_password=settings.genlayer_keystore_password,
             timeout_seconds=settings.genlayer_timeout_seconds,
         )

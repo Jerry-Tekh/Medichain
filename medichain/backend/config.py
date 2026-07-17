@@ -1,7 +1,6 @@
 """Runtime configuration for the MediChain API."""
 
 from dataclasses import dataclass
-import json
 import os
 import re
 from urllib.parse import urlparse
@@ -19,6 +18,7 @@ ADDRESS_PATTERN = re.compile(r"^0x[0-9a-fA-F]{40}$")
 PRIVATE_KEY_PATTERN = re.compile(r"^(?:0x)?[0-9a-fA-F]{64}$")
 ACCOUNT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 JWT_SECRET_MIN_LENGTH = 64
+MAX_GENLAYER_TRANSACTION_COST_WEI = 500_000_000_000_000_000
 
 
 def _csv(value: str) -> tuple[str, ...]:
@@ -76,7 +76,7 @@ class Settings:
     genlayer_account_name: str
     genlayer_private_key: str
     genlayer_cli_command: str
-    genlayer_cli_fees: str
+    genlayer_max_transaction_cost_wei: int
     genlayer_keystore_password: str
     genlayer_timeout_seconds: int
 
@@ -221,12 +221,15 @@ class Settings:
             raise RuntimeError("GENLAYER_CLI_COMMAND must not be empty")
         if not 30 <= self.genlayer_timeout_seconds <= 900:
             raise RuntimeError("GENLAYER_TIMEOUT_SECONDS must be between 30 and 900")
-        try:
-            fees = json.loads(self.genlayer_cli_fees)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("GENLAYER_CLI_FEES must be valid JSON") from exc
-        if not isinstance(fees, dict):
-            raise RuntimeError("GENLAYER_CLI_FEES must be a JSON object")
+        if not (
+            0
+            < self.genlayer_max_transaction_cost_wei
+            <= MAX_GENLAYER_TRANSACTION_COST_WEI
+        ):
+            raise RuntimeError(
+                "GENLAYER_MAX_TRANSACTION_COST_WEI must be positive and "
+                "no greater than 0.5 GEN"
+            )
 
         if self.is_production:
             if not PRIVATE_KEY_PATTERN.fullmatch(self.genlayer_private_key):
@@ -290,10 +293,10 @@ def load_settings() -> Settings:
         genlayer_account_name=os.getenv("GENLAYER_ACCOUNT_NAME", "medichain-production").strip(),
         genlayer_private_key=os.getenv("PRIVATE_KEY", "").strip(),
         genlayer_cli_command=os.getenv("GENLAYER_CLI_COMMAND", "genlayer").strip(),
-        genlayer_cli_fees=os.getenv(
-            "GENLAYER_CLI_FEES",
-            '{"distribution":{"leaderTimeunitsAllocation":"1000","validatorTimeunitsAllocation":"1000","rotations":["0"]}}',
-        ).strip(),
+        genlayer_max_transaction_cost_wei=_int_env(
+            "GENLAYER_MAX_TRANSACTION_COST_WEI",
+            MAX_GENLAYER_TRANSACTION_COST_WEI,
+        ),
         genlayer_keystore_password=os.getenv("GENLAYER_KEYSTORE_PASSWORD", ""),
         genlayer_timeout_seconds=_int_env("GENLAYER_TIMEOUT_SECONDS", 600),
     )

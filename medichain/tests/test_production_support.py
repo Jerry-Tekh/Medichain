@@ -61,6 +61,7 @@ def production_environment(**overrides):
         "GENLAYER_RPC_URL": "https://rpc-bradbury.genlayer.com",
         "GENLAYER_NETWORK": "testnet-bradbury",
         "GENLAYER_ACCOUNT_NAME": "medichain-production",
+        "GENLAYER_MAX_TRANSACTION_COST_WEI": "500000000000000000",
         "ALLOWED_ORIGINS": "https://app.example.com",
         "ALLOWED_HOSTS": "api.example.com",
         "MEDICHAIN_WALLET_AUTH_REQUIRED": "true",
@@ -128,6 +129,24 @@ def test_production_rejects_short_credentials():
         assert_raises(RuntimeError, load_settings)
     with environment(**production_environment(GENLAYER_KEYSTORE_PASSWORD="short")):
         assert_raises(RuntimeError, load_settings)
+
+
+def test_genlayer_transaction_cost_is_capped_at_half_gen():
+    with environment(
+        **production_environment(
+            GENLAYER_MAX_TRANSACTION_COST_WEI="500000000000000001"
+        )
+    ):
+        assert_raises(RuntimeError, load_settings)
+    with environment(
+        **production_environment(
+            GENLAYER_MAX_TRANSACTION_COST_WEI="500000000000000000"
+        )
+    ):
+        assert (
+            load_settings().genlayer_max_transaction_cost_wei
+            == 500_000_000_000_000_000
+        )
 
 
 def test_production_rejects_non_postgres_auth_store():
@@ -204,6 +223,67 @@ Read operation successfully executed
     }
 
 
+def test_clinicaltrials_record_becomes_canonical_snapshot():
+    gateway = GenLayerCliGateway("0x1234")
+    source_url = "https://clinicaltrials.gov/study/NCT04280705"
+    snapshot = gateway._protocol_snapshot_from_record(
+        {
+            "protocolSection": {
+                "identificationModule": {
+                    "nctId": "NCT04280705",
+                    "briefTitle": "Adaptive COVID-19 Treatment Trial",
+                },
+                "statusModule": {"overallStatus": "COMPLETED"},
+                "designModule": {
+                    "enrollmentInfo": {"count": 1062},
+                },
+                "outcomesModule": {
+                    "primaryOutcomes": [
+                        {"measure": "Time to Recovery"},
+                    ],
+                },
+                "descriptionModule": {
+                    "briefSummary": "A randomized treatment trial.",
+                },
+            },
+        },
+        source_url,
+    )
+    assert json.loads(snapshot) == {
+        "registry_id": "NCT04280705",
+        "official_title": "Adaptive COVID-19 Treatment Trial",
+        "overall_status": "COMPLETED",
+        "enrollment": 1062,
+        "primary_outcomes": ["Time to Recovery"],
+        "summary": "A randomized treatment trial.",
+        "source_url": source_url,
+    }
+
+
+def test_register_trial_passes_backend_snapshot_to_contract():
+    gateway = GenLayerCliGateway("0x1234")
+    captured = {}
+    gateway._fetch_protocol_snapshot = lambda source_url: '{"registry_id":"NCT04280705"}'
+    gateway.write = lambda method, args=None: captured.update(
+        {"method": method, "args": args}
+    )
+    gateway.get_trial = lambda trial_id: {"trial_id": trial_id}
+
+    result = gateway.register_trial(
+        "TRIAL-001",
+        "https://clinicaltrials.gov/study/NCT04280705",
+        "Treatment improves recovery",
+        ["Time to Recovery"],
+        1062,
+        "0x1111111111111111111111111111111111111111",
+        100,
+    )
+
+    assert result == {"trial_id": "TRIAL-001"}
+    assert captured["method"] == "register_trial"
+    assert captured["args"][-1] == '{"registry_id":"NCT04280705"}'
+
+
 def test_genlayer_success_ignores_stderr_diagnostics():
     gateway = GenLayerCliGateway("0x1234")
 
@@ -273,11 +353,254 @@ def test_genlayer_transport_error_stays_gateway_error():
         genlayer_client.subprocess.run = original_run
 
 
+def test_genlayer_read_retries_transient_transport_errors():
+    gateway = GenLayerCliGateway("0x1234")
+    gateway._ready = True
+    attempts = []
+
+    def run_process(_cmd):
+        attempts.append(True)
+        if len(attempts) < 3:
+            raise GenLayerGatewayError("GenLayer CLI failed: fetch failed")
+        return "Result:\n{}\n\nRead operation successfully executed"
+
+    import genlayer_client
+    original_sleep = genlayer_client.time.sleep
+    gateway._run_process = run_process
+    genlayer_client.time.sleep = lambda _seconds: None
+    try:
+        assert gateway.call("list_trials") == {}
+    finally:
+        genlayer_client.time.sleep = original_sleep
+
+    assert len(attempts) == 3
+
+
+def test_genlayer_read_does_not_retry_non_transport_errors():
+    gateway = GenLayerCliGateway("0x1234")
+    gateway._ready = True
+    attempts = []
+
+    def run_process(_cmd):
+        attempts.append(True)
+        raise GenLayerGatewayError("GenLayer CLI failed: invalid request")
+
+    gateway._run_process = run_process
+    assert_raises(
+        GenLayerGatewayError,
+        lambda: gateway.call("list_trials"),
+    )
+    assert len(attempts) == 1
+
+
 def test_genlayer_write_rejects_error_receipt():
     gateway = GenLayerCliGateway("0x1234")
     gateway._ready = True
-    gateway._run_process = lambda cmd, stdin=None: "txExecutionResultName: 'FINISHED_WITH_ERROR'"
-    assert_raises(IntegrityCheckError, lambda: gateway.write("register_trial", ["ABC"]))
+    transaction_hash = "0x" + ("ab" * 32)
+    gateway._run_bounded_transaction = lambda *args, **kwargs: {
+        "transactionHash": transaction_hash,
+        "txExecutionResultName": "FINISHED_WITH_ERROR",
+    }
+    try:
+        gateway.write("register_trial", ["ABC"])
+    except IntegrityCheckError as exc:
+        assert "register_trial" in str(exc)
+        assert transaction_hash in str(exc)
+    else:
+        raise AssertionError("expected IntegrityCheckError")
+
+
+def test_genlayer_writes_use_the_bounded_transaction_runner():
+    gateway = GenLayerCliGateway(
+        "0x1234",
+        private_key="ab" * 32,
+        max_transaction_cost_wei=500_000_000_000_000_000,
+    )
+    gateway._ready = True
+    captured = {}
+
+    def capture(action, **kwargs):
+        captured["action"] = action
+        captured.update(kwargs)
+        return {
+            "transactionHash": "0x" + ("12" * 32),
+            "signedCostCeilingWei": "1000",
+            "txExecutionResultName": "FINISHED_WITH_RETURN",
+        }
+
+    gateway._run_bounded_transaction = capture
+    gateway.write("submit_flag", ["trial", "wallet", "description", ""])
+    assert captured["action"] == "write"
+    assert captured["method"] == "submit_flag"
+    assert captured["args"] == ["trial", "wallet", "description", ""]
+
+
+def test_bounded_transaction_runner_rejects_cost_above_limit():
+    fake_module = """
+export const chains = { testnetBradbury: {} };
+export function createAccount() {
+  return {
+    address: "0x1111111111111111111111111111111111111111",
+    type: "local",
+    signTransaction: async () => "0xdead"
+  };
+}
+export function createClient({ account }) {
+  return {
+    writeContract: async () => {
+      await account.signTransaction({ gas: 100n, gasPrice: 2n, value: 0n });
+      return "0x" + "12".repeat(32);
+    },
+    waitForTransactionReceipt: async () => ({
+      statusName: "ACCEPTED",
+      resultName: "AGREE",
+      txExecutionResultName: "FINISHED_WITH_RETURN",
+      txDataDecoded: {}
+    })
+  };
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        module_path = Path(tmp) / "fake-genlayer-js.mjs"
+        module_path.write_text(fake_module, encoding="utf-8")
+        gateway = GenLayerCliGateway(
+            "0x1111111111111111111111111111111111111111",
+            rpc_url="https://rpc.example.com",
+            private_key="ab" * 32,
+            max_transaction_cost_wei=249,
+        )
+        gateway._ready = True
+        with environment(GENLAYER_JS_MODULE=str(module_path)):
+            assert_raises(
+                GenLayerGatewayError,
+                lambda: gateway.write("submit_flag", ["trial", "wallet", "description", ""]),
+            )
+
+
+def test_bounded_transaction_runner_accepts_cost_at_limit():
+    fake_module = """
+export const chains = { testnetBradbury: {} };
+export function createAccount() {
+  return {
+    address: "0x1111111111111111111111111111111111111111",
+    type: "local",
+    signTransaction: async () => "0xdead"
+  };
+}
+export function createClient({ account }) {
+  return {
+    writeContract: async () => {
+      await account.signTransaction({ gas: 100n, gasPrice: 2n, value: 0n });
+      return "0x" + "12".repeat(32);
+    },
+    waitForTransactionReceipt: async () => ({
+      statusName: "ACCEPTED",
+      resultName: "AGREE",
+      txExecutionResultName: "FINISHED_WITH_RETURN",
+      txDataDecoded: {}
+    })
+  };
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        module_path = Path(tmp) / "fake-genlayer-js.mjs"
+        module_path.write_text(fake_module, encoding="utf-8")
+        gateway = GenLayerCliGateway(
+            "0x1111111111111111111111111111111111111111",
+            rpc_url="https://rpc.example.com",
+            private_key="ab" * 32,
+            max_transaction_cost_wei=250,
+        )
+        gateway._ready = True
+        with environment(GENLAYER_JS_MODULE=str(module_path)):
+            receipt = gateway.write(
+                "submit_flag",
+                ["trial", "wallet", "description", ""],
+            )
+        assert receipt["signedCostCeilingWei"] == "250"
+
+
+def test_bounded_deployment_encodes_address_arguments():
+    fake_module = """
+export const abi = {
+  calldata: {
+    decode: (value) => ({ kind: "address", bytes: Array.from(value) })
+  }
+};
+export const chains = { testnetBradbury: {} };
+export function createAccount() {
+  return {
+    address: "0x1111111111111111111111111111111111111111",
+    type: "local",
+    signTransaction: async () => "0xdead"
+  };
+}
+export function createClient({ account }) {
+  return {
+    deployContract: async ({ args }) => {
+      if (args[0].kind !== "address" || args[0].bytes[0] !== 24) {
+        throw new Error("constructor address was not encoded");
+      }
+      await account.signTransaction({ gas: 100n, gasPrice: 2n, value: 0n });
+      return "0x" + "12".repeat(32);
+    },
+    waitForTransactionReceipt: async () => ({
+      statusName: "ACCEPTED",
+      resultName: "AGREE",
+      txExecutionResultName: "FINISHED_WITH_RETURN",
+      txDataDecoded: {
+        contractAddress: "0x2222222222222222222222222222222222222222"
+      }
+    })
+  };
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        module_path = Path(tmp) / "fake-genlayer-js.mjs"
+        contract_path = Path(tmp) / "contract.py"
+        module_path.write_text(fake_module, encoding="utf-8")
+        contract_path.write_text("contract", encoding="utf-8")
+        gateway = GenLayerCliGateway(
+            "0x1111111111111111111111111111111111111111",
+            rpc_url="https://rpc.example.com",
+            private_key="ab" * 32,
+            max_transaction_cost_wei=250,
+        )
+        gateway._ready = True
+        with environment(GENLAYER_JS_MODULE=str(module_path)):
+            result = gateway.deploy(
+                str(contract_path),
+                [{
+                    "__medichain_address__":
+                    "0x1111111111111111111111111111111111111111"
+                }],
+            )
+        assert result["contractAddress"] == (
+            "0x2222222222222222222222222222222222222222"
+        )
+
+
+def test_genlayer_write_rejection_without_hash_stays_readable():
+    gateway = GenLayerCliGateway("0x1234")
+    message = gateway._write_rejection_message(
+        "submit_results",
+        "txExecutionResultName: 'FINISHED_WITH_ERROR'",
+    )
+    assert message == "Bradbury rejected the submit_results contract write"
+
+
+def test_genlayer_leader_timeout_stays_retryable():
+    gateway = GenLayerCliGateway("0x1234")
+    assert_raises(
+        GenLayerGatewayError,
+        lambda: gateway._validate_write_result(
+            "register_trial",
+            {
+                "statusName": "LEADER_TIMEOUT",
+                "txExecutionResultName": "FINISHED_WITH_ERROR",
+            },
+        ),
+    )
 
 
 def test_signer_secrets_are_not_passed_in_process_arguments():
@@ -313,12 +636,15 @@ def test_npx_cli_resolves_its_cached_ethers_module():
         package_root = home / ".npm" / "_npx" / "cache-key" / "node_modules"
         cli_entry = package_root / "genlayer" / "dist" / "index.js"
         ethers_entry = package_root / "ethers" / "lib.esm" / "index.js"
+        genlayer_js_entry = package_root / "genlayer-js" / "dist" / "index.js"
         binary = package_root / ".bin" / "genlayer"
         cli_entry.parent.mkdir(parents=True)
         ethers_entry.parent.mkdir(parents=True)
+        genlayer_js_entry.parent.mkdir(parents=True)
         binary.parent.mkdir(parents=True)
         cli_entry.write_text("", encoding="utf-8")
         ethers_entry.write_text("", encoding="utf-8")
+        genlayer_js_entry.write_text("", encoding="utf-8")
         binary.symlink_to(cli_entry)
 
         with environment(HOME=str(home)):
@@ -327,6 +653,7 @@ def test_npx_cli_resolves_its_cached_ethers_module():
                 cli_command="npx -y genlayer@0.39.2",
             )
             assert gateway._ethers_module_path() == str(ethers_entry)
+            assert gateway._genlayer_js_module_path() == str(genlayer_js_entry)
 
 
 def test_cli_subprocess_environment_excludes_application_secrets():

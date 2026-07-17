@@ -13,7 +13,7 @@ services:
       - key: MEDICHAIN_BACKEND_MODE
         value: genlayer
       - key: MEDICHAIN_CONTRACT_ADDRESS
-        value: 0x8900308F73a6A7302C6B958F27D5d3dB149aE82b
+        value: 0x71EACA0FB43DE806e8e549554fc0D91BBdbB2213
       - key: GENLAYER_RPC_URL
         value: https://rpc-bradbury.genlayer.com
       - key: GENLAYER_NETWORK
@@ -22,6 +22,8 @@ services:
         value: medichain-production
       - key: GENLAYER_CLI_COMMAND
         value: genlayer
+      - key: GENLAYER_MAX_TRANSACTION_COST_WEI
+        value: "500000000000000000"
       - key: GENLAYER_TIMEOUT_SECONDS
         value: "600"
       - key: MEDICHAIN_WALLET_AUTH_REQUIRED

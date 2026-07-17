@@ -41,7 +41,6 @@ Minor differences in flag wording, description text, summary text, or
 non-critical flags do not need to match.
 """
 
-
 def _fail(message: str) -> None:
     # The pinned runner lacks a dedicated user-error class; a built-in
     # exception preserves the intended failure and message.
@@ -54,6 +53,10 @@ def _clean_json_response(raw: str) -> str:
         cleaned = cleaned.strip("`").strip()
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:].strip()
+    object_start = cleaned.find("{")
+    object_end = cleaned.rfind("}")
+    if object_start >= 0 and object_end >= object_start:
+        cleaned = cleaned[object_start:object_end + 1]
     return cleaned
 
 
@@ -87,6 +90,65 @@ def _coerce_int(value, field_name: str) -> int:
     except Exception:
         _fail(f"LLM response field {field_name} must be an integer")
     return 0
+
+
+def _clinicaltrials_api_url(source_url: str) -> str:
+    normalized = source_url.upper()
+    marker_index = normalized.find("NCT")
+    if marker_index < 0:
+        _fail("[EXPECTED] ClinicalTrials.gov URL must contain an NCT identifier")
+    registry_id = normalized[marker_index:marker_index + 11]
+    if (
+        len(registry_id) != 11
+        or not registry_id.startswith("NCT")
+        or not registry_id[3:].isdigit()
+    ):
+        _fail("[EXPECTED] ClinicalTrials.gov URL contains an invalid NCT identifier")
+    return f"https://clinicaltrials.gov/api/v2/studies/{registry_id}"
+
+
+def _validate_protocol_snapshot(raw_json: str, source_url: str) -> str:
+    try:
+        data = json.loads(_clean_json_response(raw_json))
+    except Exception:
+        _fail("[EXPECTED] protocol snapshot must be valid JSON")
+        return ""
+    if not isinstance(data, dict):
+        _fail("[EXPECTED] protocol snapshot must be a JSON object")
+
+    expected_registry_id = _clinicaltrials_api_url(source_url).rsplit("/", 1)[-1]
+    registry_id = str(data.get("registry_id", "")).strip().upper()
+    official_title = str(data.get("official_title", "")).strip()
+    if registry_id != expected_registry_id:
+        _fail("[EXPECTED] protocol snapshot NCT identifier does not match source URL")
+    if not official_title:
+        _fail("[EXPECTED] protocol snapshot has no study title")
+
+    enrollment = _coerce_int(data.get("enrollment", 0) or 0, "enrollment")
+    if enrollment < 0:
+        _fail("[EXPECTED] protocol snapshot enrollment must not be negative")
+
+    primary_outcomes = data.get("primary_outcomes", [])
+    if not isinstance(primary_outcomes, list):
+        _fail("[EXPECTED] protocol snapshot primary outcomes must be a list")
+    outcomes = []
+    for item in primary_outcomes:
+        text = str(item).strip()
+        if text:
+            outcomes.append(text[:500])
+    if not outcomes:
+        _fail("[EXPECTED] protocol snapshot has no primary outcomes")
+
+    snapshot = {
+        "registry_id": registry_id[:128],
+        "official_title": official_title[:1000],
+        "overall_status": str(data.get("overall_status", "unknown")).strip()[:128],
+        "enrollment": enrollment,
+        "primary_outcomes": outcomes[:20],
+        "summary": str(data.get("summary", "")).strip()[:1500],
+        "source_url": source_url,
+    }
+    return json.dumps(snapshot, sort_keys=True)
 
 
 def _clean_flags(value) -> list[dict]:
@@ -300,6 +362,7 @@ class MediChain(gl.Contract):
         expected_sample_size: int,
         sponsor_wallet: str,
         integrity_bond: u256,
+        protocol_snapshot_json: str,
     ) -> None:
         self._require_owner()
         if not trial_id or not trial_id.strip():
@@ -314,11 +377,10 @@ class MediChain(gl.Contract):
             _fail("expected_sample_size must be positive")
         if integrity_bond <= 0:
             _fail("integrity_bond must be positive")
-
-        def fetch_protocol() -> str:
-            return gl.get_webpage(clinicaltrials_gov_url, mode="text")
-
-        protocol_snapshot = gl.eq_principle.strict_eq(fetch_protocol)
+        protocol_snapshot = _validate_protocol_snapshot(
+            protocol_snapshot_json,
+            clinicaltrials_gov_url,
+        )
 
         self.trial_exists[trial_id] = True
         self.trial_sponsor[trial_id] = sponsor_wallet
@@ -364,11 +426,11 @@ class MediChain(gl.Contract):
         expected_n = self.trial_expected_n[trial_id]
 
         def run_integrity_analysis() -> str:
-            current_registry = gl.get_webpage(registry_url, mode="text")
-            paper = gl.get_webpage(publication_url, mode="text")
+            current_registry = gl.nondet.web.render(registry_url, mode="text")
+            paper = gl.nondet.web.render(publication_url, mode="text")
             preprint_text = ""
             if preprint_url:
-                preprint_text = gl.get_webpage(preprint_url, mode="text")
+                preprint_text = gl.nondet.web.render(preprint_url, mode="text")
             prompt = _build_integrity_prompt(
                 protocol_snapshot,
                 current_registry,
@@ -380,7 +442,10 @@ class MediChain(gl.Contract):
             )
             return gl.nondet.exec_prompt(prompt)
 
-        raw_json = gl.eq_principle.prompt_comparative(run_integrity_analysis, EQUIVALENCE_PRINCIPLE)
+        raw_json = gl.eq_principle.prompt_comparative(
+            run_integrity_analysis,
+            EQUIVALENCE_PRINCIPLE,
+        )
         result = _parse_integrity_result(raw_json)
         flags_json = json.dumps(result["flags"])
 

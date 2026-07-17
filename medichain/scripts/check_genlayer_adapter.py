@@ -26,6 +26,19 @@ def main() -> int:
     assert "sender_account" not in source, "pinned runner exposes sender_address, not sender_account"
     assert "self.owner = gl.message.sender_address" in source, "deployer must become relayer owner"
     assert "only the MediChain relayer can perform writes" in source
+    assert "gl.nondet.web.render(" in source, "web operations must use the pinned runner API"
+    assert "gl.nondet.exec_prompt(" in source, "LLM operations must use the pinned runner API"
+    assert "gl.eq_principle.prompt_comparative(" in source
+    assert "gl.get_webpage(" not in source, "legacy web calls fail in the pinned runner"
+    assert "gl.eq_principle_prompt_" not in source, "legacy eq-principle calls fail in the pinned runner"
+    assert "https://clinicaltrials.gov/api/v2/studies/" in source
+    assert "_validate_protocol_snapshot(" in source
+    register_method = source.split("def register_trial(", 1)[1].split(
+        "@gl.public.write",
+        1,
+    )[0]
+    assert "gl.nondet." not in register_method
+    assert "protocol_snapshot_json: str" in register_method
     assert "emit_raw_event" not in source, "adapter should not depend on uncertain event API"
     assert "= TreeMap()" not in source, "bare TreeMap initializers block Bradbury deployment"
 

@@ -17,8 +17,30 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from medichain_contract import IntegrityCheckError
+
+
+READ_RETRY_ATTEMPTS = 3
+READ_RETRY_BASE_DELAY_SECONDS = 1
+RETRYABLE_TRANSPORT_MARKERS = (
+    "fetch failed",
+    "timed out",
+    "timeout",
+    "etimedout",
+    "enetunreach",
+    "econnrefused",
+    "econnreset",
+    "socket hang up",
+    "network error",
+    "temporarily unavailable",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+)
 
 
 class GenLayerGatewayError(RuntimeError):
@@ -38,7 +60,7 @@ class GenLayerCliGateway:
         account_name: str = "medichain-production",
         private_key: str = "",
         cli_command: str = "genlayer",
-        fees: str = "",
+        max_transaction_cost_wei: int = 500_000_000_000_000_000,
         keystore_password: str = "",
         timeout_seconds: int = 600,
     ):
@@ -48,7 +70,7 @@ class GenLayerCliGateway:
         self.account_name = account_name
         self.private_key = private_key
         self.cli_command = tuple(shlex.split(cli_command))
-        self.fees = fees
+        self.max_transaction_cost_wei = max_transaction_cost_wei
         self.keystore_password = keystore_password
         self.timeout_seconds = timeout_seconds
         self.signer_address = ""
@@ -64,6 +86,127 @@ class GenLayerCliGateway:
         if isinstance(value, (list, dict)):
             return json.dumps(value)
         return str(value)
+
+    def _clinicaltrials_api_url(self, source_url: str) -> str:
+        parsed = urlparse(source_url)
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme != "https"
+            or hostname not in {"clinicaltrials.gov", "www.clinicaltrials.gov"}
+        ):
+            raise GenLayerGatewayError(
+                "clinical trial source must be an HTTPS ClinicalTrials.gov URL"
+            )
+        registry_match = re.search(r"NCT[0-9]{8}", source_url.upper())
+        if not registry_match:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov URL must contain a valid NCT identifier"
+            )
+        return (
+            "https://clinicaltrials.gov/api/v2/studies/"
+            f"{registry_match.group(0)}"
+        )
+
+    def _protocol_snapshot_from_record(self, record: dict, source_url: str) -> str:
+        try:
+            protocol = record["protocolSection"]
+            identification = protocol["identificationModule"]
+            status = protocol.get("statusModule", {})
+            design = protocol.get("designModule", {})
+            outcomes_module = protocol["outcomesModule"]
+        except (KeyError, TypeError) as exc:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov returned an incomplete protocol record"
+            ) from exc
+
+        registry_id = str(identification.get("nctId", "")).strip().upper()
+        expected_registry_id = self._clinicaltrials_api_url(source_url).rsplit("/", 1)[-1]
+        official_title = str(
+            identification.get("officialTitle")
+            or identification.get("briefTitle")
+            or ""
+        ).strip()
+        enrollment_info = design.get("enrollmentInfo", {})
+        primary_outcomes = outcomes_module.get("primaryOutcomes", [])
+        if registry_id != expected_registry_id or not official_title:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov record does not match the requested study"
+            )
+        if not isinstance(enrollment_info, dict):
+            enrollment_info = {}
+        try:
+            enrollment = int(enrollment_info.get("count", 0) or 0)
+        except (TypeError, ValueError) as exc:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov returned an invalid enrollment count"
+            ) from exc
+        if enrollment < 0 or not isinstance(primary_outcomes, list):
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov returned malformed protocol values"
+            )
+
+        outcomes = []
+        for item in primary_outcomes:
+            measure = item.get("measure", "") if isinstance(item, dict) else item
+            text = str(measure).strip()
+            if text:
+                outcomes.append(text[:500])
+        if not outcomes:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov record contains no primary outcomes"
+            )
+
+        description = protocol.get("descriptionModule", {})
+        if not isinstance(description, dict):
+            description = {}
+        snapshot = {
+            "registry_id": registry_id,
+            "official_title": official_title[:1000],
+            "overall_status": str(
+                status.get("overallStatus", "unknown")
+                if isinstance(status, dict)
+                else "unknown"
+            ).strip()[:128],
+            "enrollment": enrollment,
+            "primary_outcomes": outcomes[:20],
+            "summary": str(description.get("briefSummary", "")).strip()[:1500],
+            "source_url": source_url,
+        }
+        return json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+
+    def _fetch_protocol_snapshot(self, source_url: str) -> str:
+        request = Request(
+            self._clinicaltrials_api_url(source_url),
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "MediChain/2.0",
+            },
+        )
+        try:
+            with urlopen(
+                request,
+                timeout=min(self.timeout_seconds, 30),
+            ) as response:
+                body = response.read(5_000_001)
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov protocol fetch failed"
+            ) from exc
+        if len(body) > 5_000_000:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov protocol response exceeded 5 MB"
+            )
+        try:
+            record = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov returned invalid JSON"
+            ) from exc
+        if not isinstance(record, dict):
+            raise GenLayerGatewayError(
+                "ClinicalTrials.gov returned an invalid protocol record"
+            )
+        return self._protocol_snapshot_from_record(record, source_url)
 
     def _process_environment(self, extra_env=None):
         process_env = os.environ.copy()
@@ -186,11 +329,18 @@ class GenLayerCliGateway:
             return ""
         return matches[-1].strip()
 
-    def _ethers_module_path(self) -> str:
-        override = os.getenv("GENLAYER_ETHERS_MODULE")
-        if override:
-            return override
+    def _write_rejection_message(self, method: str, output: str) -> str:
+        transaction_match = re.search(
+            r"(?:Write Transaction Hash:\s*|txId:\s*['\"]|"
+            r"\"transactionHash\"\s*:\s*\")(0x[0-9a-fA-F]{64})",
+            output,
+        )
+        message = f"Bradbury rejected the {method} contract write"
+        if transaction_match:
+            message += f" (transaction {transaction_match.group(1)})"
+        return message
 
+    def _cli_package_roots(self) -> list[Path]:
         candidates = []
         executable = shutil.which(self.cli_command[0])
         if executable:
@@ -206,10 +356,18 @@ class GenLayerCliGateway:
                 executable.resolve()
                 for executable in npm_cache.glob("*/node_modules/.bin/genlayer")
             )
+        package_roots = []
         for candidate in candidates:
-            if candidate.parent.name != "dist":
-                continue
-            package_root = candidate.parent.parent
+            if candidate.parent.name == "dist":
+                package_roots.append(candidate.parent.parent)
+        return package_roots
+
+    def _ethers_module_path(self) -> str:
+        override = os.getenv("GENLAYER_ETHERS_MODULE")
+        if override:
+            return override
+
+        for package_root in self._cli_package_roots():
             for ethers_module in (
                 package_root / "node_modules" / "ethers" / "lib.esm" / "index.js",
                 package_root.parent / "ethers" / "lib.esm" / "index.js",
@@ -217,6 +375,20 @@ class GenLayerCliGateway:
                 if ethers_module.is_file():
                     return str(ethers_module)
         return "/usr/local/lib/node_modules/genlayer/node_modules/ethers/lib.esm/index.js"
+
+    def _genlayer_js_module_path(self) -> str:
+        override = os.getenv("GENLAYER_JS_MODULE")
+        if override:
+            return override
+
+        for package_root in self._cli_package_roots():
+            for module in (
+                package_root / "node_modules" / "genlayer-js" / "dist" / "index.js",
+                package_root.parent / "genlayer-js" / "dist" / "index.js",
+            ):
+                if module.is_file():
+                    return str(module)
+        return "/usr/local/lib/node_modules/genlayer/node_modules/genlayer-js/dist/index.js"
 
     def _ensure_cli_ready(self) -> None:
         if self._ready:
@@ -253,35 +425,142 @@ class GenLayerCliGateway:
                 self._run_process([*self.cli_command, "account", "use", self.account_name])
             self._ready = True
 
+    def _tag_transaction_value(self, value):
+        if isinstance(value, bool) or value is None or isinstance(value, str):
+            return value
+        if isinstance(value, int):
+            return {"__medichain_int__": str(value)}
+        if isinstance(value, list):
+            return [self._tag_transaction_value(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                key: self._tag_transaction_value(item)
+                for key, item in value.items()
+            }
+        raise GenLayerGatewayError(
+            f"unsupported GenLayer transaction argument type: {type(value).__name__}"
+        )
+
+    def _run_bounded_transaction(
+        self,
+        action: str,
+        *,
+        method: str = "",
+        args=None,
+        contract_path: str = "",
+    ) -> dict:
+        if not self.private_key:
+            raise GenLayerGatewayError(
+                "PRIVATE_KEY is required for bounded GenLayer transactions"
+            )
+        payload = {
+            "action": action,
+            "private_key": self.private_key,
+            "rpc_url": self.rpc_url,
+            "network": self.network,
+            "max_transaction_cost_wei": str(self.max_transaction_cost_wei),
+            "args": self._tag_transaction_value(args or []),
+        }
+        if action == "write":
+            payload.update({
+                "contract_address": self.contract_address,
+                "method": method,
+            })
+        elif action == "deploy":
+            payload["contract_path"] = contract_path
+        else:
+            raise GenLayerGatewayError(f"unsupported transaction action: {action}")
+
+        script = Path(__file__).with_name("genlayer_transaction.mjs")
+        output = self._run_process(
+            ["node", str(script)],
+            json.dumps(payload),
+            {"GENLAYER_JS_MODULE": self._genlayer_js_module_path()},
+        )
+        try:
+            result = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise GenLayerGatewayError(
+                "bounded GenLayer transaction returned invalid JSON"
+            ) from exc
+        if not isinstance(result, dict):
+            raise GenLayerGatewayError(
+                "bounded GenLayer transaction returned an invalid result"
+            )
+        return result
+
+    def _validate_write_result(self, method: str, result: dict) -> None:
+        output = json.dumps(result)
+        execution_result = result.get("txExecutionResultName")
+        transaction_hash = result.get("transactionHash")
+        transaction_suffix = (
+            f" (transaction {transaction_hash})"
+            if isinstance(transaction_hash, str)
+            else ""
+        )
+        if result.get("statusName") == "LEADER_TIMEOUT":
+            raise GenLayerGatewayError(
+                f"GenLayer write failed for {method}: LEADER_TIMEOUT"
+                f"{transaction_suffix}"
+            )
+        if execution_result == "FINISHED_WITH_ERROR":
+            raise IntegrityCheckError(self._write_rejection_message(method, output))
+        if execution_result != "FINISHED_WITH_RETURN":
+            raise GenLayerGatewayError(
+                f"GenLayer write for {method} did not return a successful "
+                f"execution receipt{transaction_suffix}"
+            )
+
+    def _run_read_process(self, cmd) -> str:
+        last_error = None
+        for attempt in range(READ_RETRY_ATTEMPTS):
+            try:
+                return self._run_process(cmd)
+            except GenLayerGatewayError as exc:
+                last_error = exc
+                normalized = str(exc).lower()
+                retryable = any(
+                    marker in normalized
+                    for marker in RETRYABLE_TRANSPORT_MARKERS
+                )
+                if not retryable or attempt == READ_RETRY_ATTEMPTS - 1:
+                    raise
+                time.sleep(READ_RETRY_BASE_DELAY_SECONDS * (2 ** attempt))
+        raise last_error
+
     def _run(self, action: str, method: str, args=None):
         args = args or []
         self._ensure_cli_ready()
 
+        if action == "write":
+            try:
+                result = self._run_bounded_transaction(
+                    "write",
+                    method=method,
+                    args=args,
+                )
+            except GenLayerGatewayError as exc:
+                raise GenLayerGatewayError(
+                    f"GenLayer write failed for {method}: {exc}"
+                ) from exc
+            self._validate_write_result(method, result)
+            return json.dumps(result)
+
         cmd = [*self.cli_command, action, self.contract_address, method]
         if self.rpc_url:
             cmd.extend(["--rpc", self.rpc_url])
-        if action == "write" and self.fees:
-            cmd.extend(["--fees", self.fees])
         if args:
             cmd.append("--args")
             cmd.extend(self._arg(item) for item in args)
 
-        stdin = self.keystore_password + "\n" if action == "write" else None
         try:
-            output = self._run_process(cmd, stdin)
+            output = (
+                self._run_read_process(cmd)
+                if action == "call"
+                else self._run_process(cmd)
+            )
         except GenLayerGatewayError as exc:
             raise GenLayerGatewayError(f"GenLayer {action} failed for {method}: {exc}") from exc
-        if action == "write":
-            if "FINISHED_WITH_ERROR" in output:
-                raise IntegrityCheckError(
-                    f"Bradbury rejected the {method} contract write"
-                )
-            if "LEADER_TIMEOUT" in output:
-                raise GenLayerGatewayError(f"GenLayer write failed for {method}: LEADER_TIMEOUT")
-            if "FINISHED_WITH_RETURN" not in output:
-                raise GenLayerGatewayError(
-                    f"GenLayer write for {method} did not return a successful execution receipt"
-                )
         return output
 
     def _extract_result_text(self, output: str) -> str:
@@ -376,6 +655,21 @@ class GenLayerCliGateway:
         with self._write_lock:
             return self._parse_result(self._run("write", method, args))
 
+    def deploy(self, contract_path: str, args=None) -> dict:
+        with self._write_lock:
+            self._ensure_cli_ready()
+            result = self._run_bounded_transaction(
+                "deploy",
+                contract_path=contract_path,
+                args=args,
+            )
+            self._validate_write_result("deploy", result)
+            if not result.get("contractAddress"):
+                raise GenLayerGatewayError(
+                    "GenLayer deployment returned no contract address"
+                )
+            return result
+
     def register_trial(
         self,
         trial_id,
@@ -387,6 +681,9 @@ class GenLayerCliGateway:
         integrity_bond,
     ):
         with self._write_lock:
+            protocol_snapshot = self._fetch_protocol_snapshot(
+                clinicaltrials_gov_url
+            )
             self.write("register_trial", [
                 trial_id,
                 clinicaltrials_gov_url,
@@ -395,6 +692,7 @@ class GenLayerCliGateway:
                 expected_sample_size,
                 sponsor_wallet,
                 integrity_bond,
+                protocol_snapshot,
             ])
             return self.get_trial(trial_id)
 
