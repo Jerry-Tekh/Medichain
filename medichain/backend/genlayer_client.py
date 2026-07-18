@@ -686,6 +686,12 @@ class GenLayerCliGateway:
                 f"GenLayer write for {method} did not return a successful "
                 f"execution receipt{transaction_suffix}"
             )
+        if result.get("resultName") != "AGREE":
+            consensus_result = result.get("resultName") or "UNKNOWN"
+            raise GenLayerGatewayError(
+                f"GenLayer write for {method} did not reach validator "
+                f"consensus ({consensus_result}){transaction_suffix}"
+            )
 
     def _run_read_process(self, cmd) -> str:
         last_error = None

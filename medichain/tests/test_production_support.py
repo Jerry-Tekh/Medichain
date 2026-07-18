@@ -509,6 +509,7 @@ def test_genlayer_writes_use_the_bounded_transaction_runner():
         return {
             "transactionHash": "0x" + ("12" * 32),
             "signedCostCeilingWei": "1000",
+            "resultName": "AGREE",
             "txExecutionResultName": "FINISHED_WITH_RETURN",
         }
 
@@ -517,6 +518,24 @@ def test_genlayer_writes_use_the_bounded_transaction_runner():
     assert captured["action"] == "write"
     assert captured["method"] == "submit_flag"
     assert captured["args"] == ["trial", "wallet", "description", ""]
+
+
+def test_genlayer_write_rejects_receipt_without_consensus():
+    gateway = GenLayerCliGateway("0x1234")
+    gateway._ready = True
+    transaction_hash = "0x" + ("cd" * 32)
+    gateway._run_bounded_transaction = lambda *args, **kwargs: {
+        "transactionHash": transaction_hash,
+        "resultName": "NO_MAJORITY",
+        "txExecutionResultName": "FINISHED_WITH_RETURN",
+    }
+    try:
+        gateway.write("submit_results", ["trial", "report"])
+    except GenLayerGatewayError as exc:
+        assert "did not reach validator consensus (NO_MAJORITY)" in str(exc)
+        assert transaction_hash in str(exc)
+    else:
+        raise AssertionError("expected GenLayerGatewayError")
 
 
 def test_bounded_transaction_runner_rejects_cost_above_limit():
