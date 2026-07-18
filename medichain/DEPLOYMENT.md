@@ -5,7 +5,7 @@ Production API writes are authorized by wallet-signature sessions and relayed
 to the owner-restricted GenLayer Bradbury contract:
 
 ```text
-0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
+0x6207D84A866919Daa876b902E3ab51F5560F10CB
 ```
 
 ## Render
@@ -36,7 +36,7 @@ If the existing Render service was created manually instead of from
 ```env
 MEDICHAIN_ENV=production
 MEDICHAIN_BACKEND_MODE=genlayer
-MEDICHAIN_CONTRACT_ADDRESS=0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
+MEDICHAIN_CONTRACT_ADDRESS=0x6207D84A866919Daa876b902E3ab51F5560F10CB
 GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
 GENLAYER_NETWORK=testnet-bradbury
 GENLAYER_ACCOUNT_NAME=medichain-production
@@ -65,6 +65,11 @@ repository-root context, and automatic deploys on commit. Select **Manual
 Deploy > Deploy latest commit** after saving the environment. If the release
 fails, the first startup error in the Render logs names the missing or invalid
 variable.
+
+After deployment, `/api/health` must report
+`0x6207D84A866919Daa876b902E3ab51F5560F10CB`. A dashboard variable can
+override `render.yaml`, so a healthy service that reports any previous
+contract address has not completed the production switch.
 
 Create a Render Postgres database in the same region as the web service and use
 its internal connection string for `DATABASE_URL`. Production startup rejects
@@ -193,9 +198,10 @@ the current ClinicalTrials.gov record plus the publication and optional
 preprint, rejects private or non-global destinations and unsupported content,
 caps each response, and strips HTML to readable text. The contract binds each
 snapshot to its submitted URL and runs the integrity assessment through
-Bradbury's comparative LLM equivalence principle. Validators still reach
-substantive consensus on the clinical assessment without waiting for GenVM web
-rendering, which previously produced `LEADER_TIMEOUT`.
+Bradbury's non-deterministic execution. Validators independently rerun one
+structured assessment and deterministic code compares the state-changing
+decision fields, without waiting for GenVM web rendering or making an
+additional comparator LLM call.
 
 ## Startup Guards
 

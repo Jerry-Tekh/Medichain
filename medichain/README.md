@@ -278,7 +278,7 @@ current GenLayer Write Contract skill for Bradbury deployments:
 | Storage initialization | Leaves annotated `TreeMap` fields to Bradbury's storage initializer; no `TreeMap()` or `TreeMap[str, ...]()` assignments in `__init__` |
 | Money type | `integrity_bond` and the bond storage map use `u256` |
 | Treasury address | Constructor accepts the deploy-time `TREASURE_ADDRESS` |
-| LLM consensus | Bounded source snapshots are validated deterministically; the clinical assessment runs inside a comparative equivalence-principle closure |
+| LLM consensus | Each validator independently reruns one structured JSON assessment; deterministic code compares verdict, score tolerance, endpoint/sample decisions, actionable-fraud state, and critical flag types |
 
 This specifically fixes the Bradbury-side "cannot get contract schema"
 failure caused by the old `py-genlayer:test` runner header, schema-hostile
@@ -295,30 +295,34 @@ set +a
 GENLAYER_CLI_COMMAND='npx -y genlayer@0.39.2' \
   python3 medichain/scripts/deploy_bradbury.py
 
-npx -y genlayer@0.39.2 schema 0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
-npx -y genlayer@0.39.2 call 0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C get_treasury_address
-npx -y genlayer@0.39.2 call 0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C get_owner
+npx -y genlayer@0.39.2 schema 0x6207D84A866919Daa876b902E3ab51F5560F10CB
+npx -y genlayer@0.39.2 call 0x6207D84A866919Daa876b902E3ab51F5560F10CB get_treasury_address
+npx -y genlayer@0.39.2 call 0x6207D84A866919Daa876b902E3ab51F5560F10CB get_owner
 ```
 
 Current corrected Bradbury deploy:
 
-- Contract: `0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C`
+- Contract: `0x6207D84A866919Daa876b902E3ab51F5560F10CB`
 - Deployment transaction:
-  `0x7fb9af63bf2238f0a7f5d5a1aa08b772088a9a38253ff97166b65673e6beeba0`
+  `0xc9c572ddc5e613765eb84667fd96ffac1c05b715c142846e05e31166908278d9`
 - Receipt result: `ACCEPTED`, `AGREE`, `FINISHED_WITH_RETURN`
 - Schema: retrieved successfully
 - `get_treasury_address`: read successfully
 - `get_owner`: returns the Render relayer address
-- Signed deployment ceiling: about `0.00295 GEN`
+- Signed deployment ceiling: about `0.00380 GEN`
 
 The backend fetches the official ClinicalTrials.gov API record and creates a
 canonical protocol snapshot before `register_trial`. The contract validates
 the NCT identifier and required protocol fields deterministically, avoiding
 Bradbury web-render timeouts during registration. Result submission uses
 bounded registry/publication snapshots from the backend, while Bradbury
-validators still perform comparative LLM consensus on the clinical assessment.
+validators independently rerun the clinical assessment and compare its
+state-changing decisions in deterministic code. This uses one LLM call per
+validator instead of an additional LLM-based comparison call.
 All state-changing calls use the bounded signer and are refused before signing
-when their transaction-cost ceiling exceeds `0.5 GEN`.
+when their transaction-cost ceiling exceeds `0.5 GEN`. The backend also rejects
+receipts unless both consensus is `AGREE` and execution is
+`FINISHED_WITH_RETURN`.
 
 ### Application-level bugs found and fixed
 
@@ -363,11 +367,12 @@ when their transaction-cost ceiling exceeds `0.5 GEN`.
    :8000, frontend on :3000) sending real `Origin`-header requests, not
    just same-process test-client calls.
 
-### Full current test count: 23/23 passing
+### Production support checks: 40/40 passing
 
-Re-verified by extracting the actual shipped zip into a clean directory
-and running `pytest` from there (not just from the build directory), so
-what's in your hands is what was tested.
+Re-verified from the repository with
+`python3 tests/test_production_support.py`, the Bradbury adapter check,
+production readiness check, Python compilation, JavaScript syntax validation,
+and `git diff --check`.
 
 ## Honest limitation: the mock LLM
 
@@ -377,14 +382,15 @@ frontend) can be tested reproducibly without network access or API keys.
 It is not a real integrity analysis engine. Production does not use this
 module: `MEDICHAIN_BACKEND_MODE=genlayer` routes reads and writes to the
 deployed Bradbury contract. The backend retrieves and sanitizes bounded source
-snapshots; Bradbury validators independently assess those same inputs through
-comparative LLM consensus. Reasoning about outcome switching, p-hacking, and
-other integrity risks remains inside the pinned GenLayer adapter.
+snapshots; Bradbury validators independently assess those same inputs and
+deterministically compare the substantive decisions. Reasoning about outcome
+switching, p-hacking, and other integrity risks remains inside the pinned
+GenLayer adapter.
 
 ## Deploying to GenLayer Bradbury
 
 The production contract is already deployed at
-`0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C`. Verify the adapter before any
+`0x6207D84A866919Daa876b902E3ab51F5560F10CB`. Verify the adapter before any
 future redeploy:
 
 1. Run the repository's Bradbury check:
@@ -393,7 +399,7 @@ future redeploy:
    ```
 2. Verify the deployed schema:
    ```bash
-   npx -y genlayer@0.39.2 schema 0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
+   npx -y genlayer@0.39.2 schema 0x6207D84A866919Daa876b902E3ab51F5560F10CB
    ```
 3. Deploy only `contract/genlayer_adapter.py` as the single-file
    contract. The local `medichain_contract.py` remains the FastAPI test

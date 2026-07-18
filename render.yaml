@@ -13,7 +13,7 @@ services:
       - key: MEDICHAIN_BACKEND_MODE
         value: genlayer
       - key: MEDICHAIN_CONTRACT_ADDRESS
-        value: 0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C
+        value: 0x6207D84A866919Daa876b902E3ab51F5560F10CB
       - key: GENLAYER_RPC_URL
         value: https://rpc-bradbury.genlayer.com
       - key: GENLAYER_NETWORK

@@ -7,16 +7,16 @@
 - Chain ID: `4221`
 - RPC: `https://rpc-bradbury.genlayer.com`
 
-## Current Production Contract
+## Current Verified Contract
 
-- Contract: `0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C`
+- Contract: `0x6207D84A866919Daa876b902E3ab51F5560F10CB`
 - Deployment transaction:
-  `0x7fb9af63bf2238f0a7f5d5a1aa08b772088a9a38253ff97166b65673e6beeba0`
+  `0xc9c572ddc5e613765eb84667fd96ffac1c05b715c142846e05e31166908278d9`
 - Receipt: `ACCEPTED`
 - Consensus: `AGREE`
 - Execution: `FINISHED_WITH_RETURN`
 - Schema: verified
-- Signed deployment ceiling: `2949336047864250` wei (about `0.00295 GEN`)
+- Signed deployment ceiling: `3802801463972700` wei (about `0.00380 GEN`)
 - Owner: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 - Treasury: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 
@@ -61,7 +61,7 @@ The script:
 1. validates secret formats without printing them
 2. creates an isolated temporary GenLayer keystore
 3. reuses the local npm package cache
-4. streams public deployment output to `medichain/.deploy/`
+4. persists the public transaction hash immediately after submission
 5. requires `AGREE` and `FINISHED_WITH_RETURN`
 6. verifies the deployed schema
 7. reads and reports treasury and owner addresses
@@ -79,18 +79,24 @@ Result submission also receives bounded backend snapshots for the current
 registry, publication, and optional preprint. The backend enforces public HTTPS
 destinations, validates redirects, caps responses, and sanitizes documents to
 text. The contract binds snapshots to their submitted URLs and runs only the
-clinical assessment through `prompt_comparative`. This preserves substantive
-validator consensus while avoiding the `LEADER_TIMEOUT` caused by GenVM web
-rendering.
+clinical assessment non-deterministically. Every validator reruns one
+structured JSON assessment and deterministic code compares the overall
+verdict, score tolerance, endpoint and sample-size decisions, actionable-fraud
+state, and critical flag types. This avoids both the extra comparator LLM call
+and the `LEADER_TIMEOUT` caused by GenVM web rendering.
 
 Live workflow verification on this deployment:
 
 - Registration transaction:
-  `0x49b55c3c721af208824a8778fb0e2bcb94e185162e416b7ece2828abd70af416`
-  (`AGREE`, `FINISHED_WITH_RETURN`, ceiling about `0.000375 GEN`)
+  `0xa029c5929531e9312be71f0f429baa8b6098e564fd2e81a39d68b704466fd491`
+  (`AGREE`, `FINISHED_WITH_RETURN`, ceiling about `0.000441 GEN`)
 - Report transaction:
-  `0x62e306e8abe9272a390bd99ba062328ebc5773a2e7ba3c0ee8bcdd902376f8c4`
-  (`AGREE`, `FINISHED_WITH_RETURN`, ceiling about `0.00137 GEN`)
+  `0x6d387e690e94a455d45336b026f8692a8b2f433d697fc7d2aa8f36e34349ad89`
+  (`AGREE`, `FINISHED_WITH_RETURN`, ceiling about `0.00161 GEN`)
+
+The stored verification report
+`MEDICHAIN-VERIFY-REPORT-20260718-001` is `clean`, `high` confidence, with
+matching endpoints and sample size.
 
 ## Verification
 
@@ -98,22 +104,42 @@ Live workflow verification on this deployment:
 python3 medichain/scripts/check_genlayer_adapter.py
 
 npx -y genlayer@0.39.2 schema \
-  0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C \
+  0x6207D84A866919Daa876b902E3ab51F5560F10CB \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C \
+  0x6207D84A866919Daa876b902E3ab51F5560F10CB \
   get_owner \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C \
+  0x6207D84A866919Daa876b902E3ab51F5560F10CB \
   get_treasury_address \
   --rpc https://rpc-bradbury.genlayer.com
 ```
 
 The schema must contain `register_trial`, `submit_results`, `submit_flag`,
 `resolve_appeal`, `get_owner`, and `get_treasury_address`.
+
+Render is switched only when `/api/health` reports this same contract address.
+Dashboard environment values can override `render.yaml`.
+
+## Diagnosed Consensus Failure
+
+Report transaction
+`0x7858cec44b5d996022e6a2c59226f38708a50dbb4db09488e12448f27f08908d`
+on experimental contract
+`0x90310690724e359F0cEc0825A45F3e8a95f0B411` returned `NO_MAJORITY`.
+The five revealed votes were two `TIMEOUT`, two
+`DETERMINISTIC_VIOLATION`, and one `AGREE`. The generic comparative wrapper
+was replaced with independent assessment plus deterministic comparison, and
+the backend now rejects every non-`AGREE` receipt.
+
+Deployment transaction
+`0x06e1a739880614473c4c3cbe2777a2a76ed1ab5148d2d89082cf38ef282cb95b`
+ended in `LEADER_TIMEOUT` with no leader public data and no validator votes.
+No contract was created. The deployment helper now persists the submitted hash
+before waiting, and the single bounded retry succeeded.
 
 ## Failed Ownership Attempt
 
@@ -142,6 +168,10 @@ address until execution is `FINISHED_WITH_RETURN` and schema/read checks pass.
 
 ## Previous Contracts
 
+- `0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C`: previous owned production
+  deployment using the generic comparative wrapper
+- `0x90310690724e359F0cEc0825A45F3e8a95f0B411`: experimental structured-output
+  deployment whose report test returned `NO_MAJORITY`
 - `0xebb0590f54Aaf1bA1Cfd544325307759c1F79e50`: schema-safe adapter without
   owner-restricted writes
 - `0x9c6D4d30F89f8701C8a4E63902880D52C5269523`: initial schema-fix deployment
