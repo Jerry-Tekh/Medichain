@@ -31,7 +31,20 @@ def main() -> int:
         "passed as bounded snapshots"
     )
     assert "gl.nondet.exec_prompt(" in source, "LLM operations must use the pinned runner API"
-    assert "gl.eq_principle.prompt_comparative(" in source
+    assert 'response_format="json"' in source, (
+        "structured LLM calls must request JSON responses"
+    )
+    assert "gl.vm.run_nondet_unsafe(" in source, (
+        "validators must independently rerun the clinical assessment"
+    )
+    assert "isinstance(leader_result, gl.vm.Return)" in source
+    assert "_integrity_results_equivalent(leader, validator)" in source
+    assert "gl.eq_principle.prompt_comparative(" not in source, (
+        "the generic comparative wrapper adds an avoidable validator LLM call"
+    )
+    assert 'leader["sample_size_consistent"]' in source
+    assert "leader_actionable_fraud" in source
+    assert "_critical_flag_types(leader)" in source
     assert "gl.get_webpage(" not in source, "legacy web calls fail in the pinned runner"
     assert "gl.eq_principle_prompt_" not in source, "legacy eq-principle calls fail in the pinned runner"
     assert "https://clinicaltrials.gov/api/v2/studies/" in source

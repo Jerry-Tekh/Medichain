@@ -10,7 +10,7 @@ consensus patterns:
 - gl.Contract class declaration for the current Bradbury runner
 - TreeMap storage with primitive values instead of dict/list state
 - JSON strings for report/flag arrays returned by view methods
-- comparative validation for LLM/web analysis instead of strict equality
+- independent LLM validation with deterministic decision-field comparison
 """
 
 from genlayer import *
@@ -27,19 +27,6 @@ FLAG_TYPES = [
 FLAG_SEVERITIES = ["critical", "moderate", "minor"]
 VERDICTS = ["clean", "concerns", "suspected_fraud"]
 CONFIDENCE_LEVELS = ["high", "medium", "low"]
-
-EQUIVALENCE_PRINCIPLE = """
-Two integrity assessments of the same clinical trial submission are
-equivalent if ALL of the following hold:
-- overall_verdict falls in the same category: clean, concerns, or suspected_fraud
-- integrity_score is within +/-10 points
-- endpoints_match has the same boolean value
-- every critical severity flag present in one assessment is also present
-  in the other assessment with the same type value
-
-Minor differences in flag wording, description text, summary text, or
-non-critical flags do not need to match.
-"""
 
 def _fail(message: str) -> None:
     # The pinned runner lacks a dedicated user-error class; a built-in
@@ -193,12 +180,17 @@ def _clean_flags(value) -> list[dict]:
     return cleaned
 
 
-def _parse_integrity_result(raw_json: str) -> dict:
-    try:
-        data = json.loads(_clean_json_response(raw_json))
-    except Exception:
-        _fail("[LLM_ERROR] integrity analysis returned invalid JSON")
-        return {}
+def _parse_integrity_result(raw_json) -> dict:
+    if isinstance(raw_json, dict):
+        data = raw_json
+    else:
+        try:
+            data = json.loads(_clean_json_response(raw_json))
+        except Exception:
+            _fail("[LLM_ERROR] integrity analysis returned invalid JSON")
+            return {}
+    if not isinstance(data, dict):
+        _fail("[LLM_ERROR] integrity analysis must return a JSON object")
 
     score = _coerce_int(data.get("integrity_score", -1), "integrity_score")
     if score < 0 or score > 100:
@@ -221,6 +213,45 @@ def _parse_integrity_result(raw_json: str) -> dict:
         "confidence": confidence,
         "summary": str(data.get("summary", ""))[:1000],
     }
+
+
+def _critical_flag_types(result: dict) -> list[str]:
+    critical_types = []
+    for flag in result["flags"]:
+        if (
+            flag["severity"] == "critical"
+            and flag["type"] not in critical_types
+        ):
+            critical_types.append(flag["type"])
+    critical_types.sort()
+    return critical_types
+
+
+def _integrity_results_equivalent(leader: dict, validator: dict) -> bool:
+    if leader["overall_verdict"] != validator["overall_verdict"]:
+        return False
+    if abs(leader["integrity_score"] - validator["integrity_score"]) > 10:
+        return False
+    if leader["endpoints_match"] != validator["endpoints_match"]:
+        return False
+    if (
+        leader["sample_size_consistent"]
+        != validator["sample_size_consistent"]
+    ):
+        return False
+
+    leader_actionable_fraud = (
+        leader["overall_verdict"] == "suspected_fraud"
+        and leader["confidence"] == "high"
+    )
+    validator_actionable_fraud = (
+        validator["overall_verdict"] == "suspected_fraud"
+        and validator["confidence"] == "high"
+    )
+    if leader_actionable_fraud != validator_actionable_fraud:
+        return False
+
+    return _critical_flag_types(leader) == _critical_flag_types(validator)
 
 
 def _build_integrity_prompt(
@@ -466,7 +497,7 @@ class MediChain(gl.Contract):
         elif preprint_snapshot_json.strip():
             _fail("[EXPECTED] preprint snapshot requires a preprint URL")
 
-        def run_integrity_analysis() -> str:
+        def run_integrity_analysis() -> dict:
             prompt = _build_integrity_prompt(
                 protocol_snapshot,
                 current_registry,
@@ -476,13 +507,28 @@ class MediChain(gl.Contract):
                 paper,
                 preprint_text,
             )
-            return gl.nondet.exec_prompt(prompt)
+            response = gl.nondet.exec_prompt(
+                prompt,
+                response_format="json",
+            )
+            if not isinstance(response, dict):
+                _fail("[LLM_ERROR] integrity analysis must return a JSON object")
+            return _parse_integrity_result(response)
 
-        raw_json = gl.eq_principle.prompt_comparative(
+        def validate_integrity_analysis(leader_result: gl.vm.Result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            try:
+                leader = _parse_integrity_result(leader_result.calldata)
+                validator = run_integrity_analysis()
+            except Exception:
+                return False
+            return _integrity_results_equivalent(leader, validator)
+
+        result = gl.vm.run_nondet_unsafe(
             run_integrity_analysis,
-            EQUIVALENCE_PRINCIPLE,
+            validate_integrity_analysis,
         )
-        result = _parse_integrity_result(raw_json)
         flags_json = json.dumps(result["flags"])
 
         self.report_exists[report_id] = True
