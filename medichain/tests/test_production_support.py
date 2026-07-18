@@ -683,6 +683,35 @@ export function createClient({ account }) {
         )
 
 
+def test_bounded_deployment_forwards_progress_log():
+    gateway = GenLayerCliGateway(
+        "0x1111111111111111111111111111111111111111",
+        private_key="ab" * 32,
+    )
+    gateway._ready = True
+    captured = {}
+
+    def capture(action, **kwargs):
+        captured["action"] = action
+        captured.update(kwargs)
+        return {
+            "transactionHash": "0x" + ("34" * 32),
+            "resultName": "AGREE",
+            "txExecutionResultName": "FINISHED_WITH_RETURN",
+            "contractAddress": "0x2222222222222222222222222222222222222222",
+        }
+
+    gateway._run_bounded_transaction = capture
+    result = gateway.deploy(
+        "/tmp/contract.py",
+        [],
+        output_log="/tmp/deploy.log",
+    )
+    assert result["contractAddress"].startswith("0x22")
+    assert captured["action"] == "deploy"
+    assert captured["output_log"] == "/tmp/deploy.log"
+
+
 def test_genlayer_write_rejection_without_hash_stays_readable():
     gateway = GenLayerCliGateway("0x1234")
     message = gateway._write_rejection_message(
@@ -810,6 +839,18 @@ def test_streamed_cli_output_is_returned_and_persisted():
         assert "Contract Address: 0x" in output
         assert "Contract Address: 0x" in persisted
         assert "AGREE" in persisted
+
+
+def test_bounded_runner_logs_transaction_hash_before_waiting():
+    source = (
+        ROOT / "backend" / "genlayer_transaction.mjs"
+    ).read_text(encoding="utf-8")
+    submitted = source.index("Transaction submitted:")
+    wait_for_receipt = source.index(
+        "const receipt = await waitForReceipt",
+        submitted,
+    )
+    assert submitted < wait_for_receipt
 
 
 def main() -> int:

@@ -98,12 +98,11 @@ def main() -> int:
             deploy_result = gateway.deploy(
                 str(contract_path),
                 [{"__medichain_address__": treasury_address}],
+                output_log=deploy_log,
             )
-            deploy_log.parent.mkdir(parents=True, exist_ok=True)
-            deploy_log.write_text(
-                json.dumps(deploy_result, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            with deploy_log.open("a", encoding="utf-8") as log_file:
+                log_file.write("\nVerified deployment receipt:\n")
+                log_file.write(json.dumps(deploy_result, indent=2) + "\n")
             if (
                 deploy_result.get("txExecutionResultName") != "FINISHED_WITH_RETURN"
                 or deploy_result.get("resultName") != "AGREE"

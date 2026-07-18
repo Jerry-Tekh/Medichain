@@ -191,6 +191,7 @@ async function main() {
     throw new Error("action must be write or deploy");
   }
 
+  process.stderr.write(`Transaction submitted: ${transactionHash}\n`);
   const receipt = await waitForReceipt(client, transactionHash);
   process.stdout.write(`${JSON.stringify(jsonSafe({
     transactionHash,

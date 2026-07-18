@@ -624,6 +624,7 @@ class GenLayerCliGateway:
         method: str = "",
         args=None,
         contract_path: str = "",
+        output_log=None,
     ) -> dict:
         if not self.private_key:
             raise GenLayerGatewayError(
@@ -648,11 +649,18 @@ class GenLayerCliGateway:
             raise GenLayerGatewayError(f"unsupported transaction action: {action}")
 
         script = Path(__file__).with_name("genlayer_transaction.mjs")
-        output = self._run_process(
-            ["node", str(script)],
-            json.dumps(payload),
-            {"GENLAYER_JS_MODULE": self._genlayer_js_module_path()},
-        )
+        command = ["node", str(script)]
+        stdin = json.dumps(payload)
+        extra_env = {"GENLAYER_JS_MODULE": self._genlayer_js_module_path()}
+        if output_log:
+            output = self._run_process_streamed(
+                command,
+                stdin,
+                extra_env,
+                output_log=output_log,
+            )
+        else:
+            output = self._run_process(command, stdin, extra_env)
         try:
             result = json.loads(output)
         except json.JSONDecodeError as exc:
@@ -837,13 +845,14 @@ class GenLayerCliGateway:
         with self._write_lock:
             return self._parse_result(self._run("write", method, args))
 
-    def deploy(self, contract_path: str, args=None) -> dict:
+    def deploy(self, contract_path: str, args=None, output_log=None) -> dict:
         with self._write_lock:
             self._ensure_cli_ready()
             result = self._run_bounded_transaction(
                 "deploy",
                 contract_path=contract_path,
                 args=args,
+                output_log=output_log,
             )
             self._validate_write_result("deploy", result)
             if not result.get("contractAddress"):
