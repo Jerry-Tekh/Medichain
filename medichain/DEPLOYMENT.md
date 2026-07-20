@@ -196,12 +196,29 @@ registration while retaining validator consensus over the stored state.
 Result submission uses the same bounded snapshot boundary. The backend fetches
 the current ClinicalTrials.gov record plus the publication and optional
 preprint, rejects private or non-global destinations and unsupported content,
-caps each response, and strips HTML to readable text. The contract binds each
-snapshot to its submitted URL and runs the integrity assessment through
-Bradbury's non-deterministic execution. Validators independently rerun one
-structured assessment and deterministic code compares the state-changing
-decision fields, without waiting for GenVM web rendering or making an
-additional comparator LLM call.
+caps each response, and strips HTML to readable text. Publication and preprint
+URLs are trimmed once before fetching; that exact canonical URL is used both
+as the contract argument and as the snapshot `source_url`, while redirect
+destinations remain separate in `resolved_url`. The backend rejects an
+internally divergent snapshot before sending a write.
+
+The frontend locks only the submitted form while its request is pending,
+announces progress through an `aria-live` status, and restores the action state
+after success or failure. Registration and result submission also perform
+public read preflights for existing trial/report IDs. A `404` means the ID is
+available; other read failures stop the operation rather than risking a paid
+write. The contract's duplicate-ID checks remain the final cross-tab guard.
+
+The bounded transaction helper queries the Bradbury debug trace after
+`FINISHED_WITH_ERROR` and returns only the final sanitized contract exception
+with the transaction hash. If the trace endpoint is unavailable or cannot be
+parsed, the API retains the generic rejection message and transaction hash.
+
+The contract binds each snapshot to its submitted URL and runs the integrity
+assessment through Bradbury's non-deterministic execution. Validators
+independently rerun one structured assessment and deterministic code compares
+the state-changing decision fields, without waiting for GenVM web rendering or
+making an additional comparator LLM call.
 
 ## Startup Guards
 

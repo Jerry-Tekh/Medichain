@@ -40,6 +40,7 @@
         <label>Connected Sponsor <output id="registerSponsor" class="wallet-output">Not connected</output></label>
         <label>Integrity Bond (GEN) <input name="integrity_bond" type="number" required /></label>
         <button type="submit" disabled>Register Trial</button>
+        <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
       </form>
       <pre class="output" id="registerOutput"></pre>
     </section>
@@ -52,6 +53,7 @@
         <label>Publication URL <input name="publication_url" required /></label>
         <label>Preprint URL (optional) <input name="preprint_url" /></label>
         <button type="submit" disabled>Submit Results for Analysis</button>
+        <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
       </form>
       <pre class="output" id="submitOutput"></pre>
     </section>
@@ -68,6 +70,7 @@
         </label>
         <label>Connected Resolver <output id="appealResolver" class="wallet-output">Not connected</output></label>
         <button type="submit" disabled>Resolve Appeal</button>
+        <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
       </form>
       <pre class="output" id="appealOutput"></pre>
     </section>
@@ -80,6 +83,7 @@
         <label>Description <textarea name="description" required></textarea></label>
         <label>Evidence URL (optional) <input name="evidence_url" /></label>
         <button type="submit" disabled>Submit Flag</button>
+        <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
       </form>
       <pre class="output" id="flagOutput"></pre>
     </section>
@@ -112,6 +116,7 @@
   </dialog>
 
   <script src="config.js"></script>
+  <script src="form_submission.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

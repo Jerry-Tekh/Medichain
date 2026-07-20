@@ -2,6 +2,7 @@ const MEDICHAIN_CONFIG = window.MEDICHAIN_CONFIG || {};
 const TARGET_CHAIN_ID = Number(MEDICHAIN_CONFIG.WALLET_CHAIN_ID || 4221);
 const TARGET_CHAIN_HEX = `0x${TARGET_CHAIN_ID.toString(16)}`;
 const TARGET_CHAIN_NAME = MEDICHAIN_CONFIG.WALLET_CHAIN_NAME || "GenLayer Bradbury";
+const formSubmission = window.MediChainFormSubmission;
 
 const walletSession = {
   accessToken: "",
@@ -72,7 +73,13 @@ function updateWalletUi(message = "") {
   for (const form of document.querySelectorAll("form[data-auth-roles]")) {
     const permitted = connected && roleAllows(form, walletSession.user.role);
     const submitButton = form.querySelector('button[type="submit"]');
-    if (submitButton) submitButton.disabled = !permitted || walletSession.busy;
+    if (submitButton) {
+      submitButton.disabled = (
+        !permitted
+        || walletSession.busy
+        || formSubmission.isBusy(form)
+      );
+    }
     form.setAttribute("aria-disabled", permitted ? "false" : "true");
   }
 
@@ -249,6 +256,15 @@ function apiErrorMessage(data, status) {
   return `HTTP ${status}`;
 }
 
+class ApiError extends Error {
+  constructor(message, status, data) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function callApi(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (walletSession.accessToken && !headers.has("Authorization")) {
@@ -273,7 +289,7 @@ async function callApi(path, options = {}) {
     ) {
       clearWalletSession("Wallet session expired");
     }
-    throw new Error(apiErrorMessage(data, res.status));
+    throw new ApiError(apiErrorMessage(data, res.status), res.status, data);
   }
   return data;
 }
@@ -295,83 +311,173 @@ function formToJson(form) {
   return obj;
 }
 
+function setFormStatus(form, message, pending = false) {
+  const status = form.querySelector(".form-status");
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.pending = pending ? "true" : "false";
+}
+
+function updateFormBusyStatus(form, busy, pendingLabel) {
+  const status = form.querySelector(".form-status");
+  if (!status) return;
+  if (busy) {
+    setFormStatus(form, pendingLabel, true);
+  } else if (status.dataset.pending === "true") {
+    setFormStatus(form, "");
+  }
+}
+
+function runFormMutation(form, pendingLabel, task) {
+  return formSubmission.run({
+    form,
+    pendingLabel,
+    task,
+    onBusyChange: (busy, label) => updateFormBusyStatus(form, busy, label),
+    onSettled: updateWalletUi,
+  });
+}
+
 // ---------------- Register Trial ----------------
 document.getElementById("registerForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const out = document.getElementById("registerOutput");
-  try {
-    requireFormAccess(e.target);
-    const payload = formToJson(e.target);
-    payload.primary_endpoints = payload.primary_endpoints.split(",").map(s => s.trim()).filter(Boolean);
-    payload.expected_sample_size = parseInt(payload.expected_sample_size, 10);
-    payload.integrity_bond = parseInt(payload.integrity_bond, 10);
+  await runFormMutation(form, "Registering...", async () => {
+    try {
+      requireFormAccess(form);
+      const payload = formToJson(form);
+      payload.clinicaltrials_gov_url = payload.clinicaltrials_gov_url.trim();
+      payload.primary_endpoints = payload.primary_endpoints
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      payload.expected_sample_size = parseInt(payload.expected_sample_size, 10);
+      payload.integrity_bond = parseInt(payload.integrity_bond, 10);
 
-    const result = await callApi("/api/register_trial", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    out.textContent = JSON.stringify(result, null, 2);
-    refreshTrials();
-  } catch (err) {
-    out.textContent = "Error: " + err.message;
-  }
+      const guarded = await formSubmission.guardedMutation({
+        callApi,
+        duplicatePath: `/api/trial/${encodeURIComponent(payload.trial_id)}`,
+        mutate: () => callApi("/api/register_trial", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+      });
+      if (guarded.kind === "duplicate") {
+        const state = guarded.record.status ? ` (${guarded.record.status})` : "";
+        out.textContent = (
+          `Trial '${payload.trial_id}' already exists${state}. `
+          + "No Bradbury write was sent. Review it in the Integrity Dashboard."
+        );
+        setFormStatus(form, "Existing trial found. No transaction was submitted.");
+        refreshTrials();
+        return;
+      }
+
+      out.textContent = JSON.stringify(guarded.value, null, 2);
+      setFormStatus(form, "Trial registered.");
+      refreshTrials();
+    } catch (err) {
+      out.textContent = "Error: " + err.message;
+      setFormStatus(form, "Registration failed. Review the error below.");
+    }
+  });
 });
 
 // ---------------- Submit Results ----------------
 document.getElementById("submitForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const out = document.getElementById("submitOutput");
-  try {
-    requireFormAccess(e.target);
-    const payload = formToJson(e.target);
-    const result = await callApi("/api/submit_results", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    out.textContent = JSON.stringify(result, null, 2);
-    refreshTrials();
-  } catch (err) {
-    out.textContent = "Error: " + err.message;
-  }
+  await runFormMutation(form, "Submitting for analysis...", async () => {
+    try {
+      requireFormAccess(form);
+      const payload = formToJson(form);
+      payload.publication_url = payload.publication_url.trim();
+      payload.preprint_url = payload.preprint_url.trim();
+      const guarded = await formSubmission.guardedMutation({
+        callApi,
+        duplicatePath: `/api/report/${encodeURIComponent(payload.report_id)}`,
+        requiredPath: `/api/trial/${encodeURIComponent(payload.trial_id)}`,
+        mutate: () => callApi("/api/submit_results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+      });
+      if (guarded.kind === "duplicate") {
+        out.textContent = (
+          `Report '${payload.report_id}' already exists. `
+          + "No Bradbury write was sent. Review the existing report."
+        );
+        setFormStatus(form, "Existing report found. No transaction was submitted.");
+        refreshTrials();
+        return;
+      }
+      if (guarded.kind === "missing") {
+        throw new Error(
+          `Trial '${payload.trial_id}' was not found. `
+          + "Register the trial before submitting results.",
+        );
+      }
+
+      out.textContent = JSON.stringify(guarded.value, null, 2);
+      setFormStatus(form, "Results submitted and analyzed.");
+      refreshTrials();
+    } catch (err) {
+      out.textContent = "Error: " + err.message;
+      setFormStatus(form, "Results submission failed. Review the error below.");
+    }
+  });
 });
 
 // ---------------- Resolve Appeal ----------------
 document.getElementById("appealForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const out = document.getElementById("appealOutput");
-  try {
-    requireFormAccess(e.target);
-    const payload = formToJson(e.target);
-    const result = await callApi("/api/resolve_appeal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    out.textContent = JSON.stringify(result, null, 2);
-    refreshTrials();
-  } catch (err) {
-    out.textContent = "Error: " + err.message;
-  }
+  await runFormMutation(form, "Resolving...", async () => {
+    try {
+      requireFormAccess(form);
+      const payload = formToJson(form);
+      const result = await callApi("/api/resolve_appeal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      out.textContent = JSON.stringify(result, null, 2);
+      setFormStatus(form, "Appeal resolved.");
+      refreshTrials();
+    } catch (err) {
+      out.textContent = "Error: " + err.message;
+      setFormStatus(form, "Appeal resolution failed. Review the error below.");
+    }
+  });
 });
 
 // ---------------- Whistleblower Flag ----------------
 document.getElementById("flagForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const out = document.getElementById("flagOutput");
-  try {
-    requireFormAccess(e.target);
-    const payload = formToJson(e.target);
-    const result = await callApi("/api/submit_flag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    out.textContent = JSON.stringify(result, null, 2);
-  } catch (err) {
-    out.textContent = "Error: " + err.message;
-  }
+  await runFormMutation(form, "Submitting flag...", async () => {
+    try {
+      requireFormAccess(form);
+      const payload = formToJson(form);
+      payload.evidence_url = payload.evidence_url.trim();
+      const result = await callApi("/api/submit_flag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      out.textContent = JSON.stringify(result, null, 2);
+      setFormStatus(form, "Flag submitted.");
+    } catch (err) {
+      out.textContent = "Error: " + err.message;
+      setFormStatus(form, "Flag submission failed. Review the error below.");
+    }
+  });
 });
 
 // ---------------- Dashboard ----------------

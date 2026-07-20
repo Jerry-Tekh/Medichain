@@ -97,6 +97,11 @@ async function loadPage() {
   const configJs = fs.readFileSync(path.join(FRONTEND_DIR, "config.js"), "utf8");
   dom.window.eval(configJs);
   dom.window.MEDICHAIN_CONFIG.API_BASE_URL = API_BASE;
+  const formSubmissionJs = fs.readFileSync(
+    path.join(FRONTEND_DIR, "form_submission.js"),
+    "utf8",
+  );
+  dom.window.eval(formSubmissionJs);
   const appJs = fs.readFileSync(path.join(FRONTEND_DIR, "app.js"), "utf8");
   dom.window.eval(appJs);
 

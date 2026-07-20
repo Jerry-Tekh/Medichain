@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "node build-config.js",
+    "test:forms": "node form_submission_test.js",
     "test:dom": "node dom_test.js"
   },
   "devDependencies": {

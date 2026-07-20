@@ -104,6 +104,12 @@ main {
 
 form { display: flex; flex-direction: column; gap: 0.6rem; }
 label { display: flex; flex-direction: column; font-size: 0.85rem; gap: 0.25rem; color: #333; }
+.form-status {
+  min-height: 1.1rem;
+  margin: 0;
+  color: #4b514d;
+  font-size: 0.78rem;
+}
 input, select, textarea {
   padding: 0.5rem;
   border: 1px solid var(--border);
