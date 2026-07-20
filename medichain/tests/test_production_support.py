@@ -368,6 +368,76 @@ def test_submit_results_passes_bounded_snapshots_to_contract():
     assert captured["args"][6] == ""
 
 
+def test_submit_results_canonicalizes_snapshot_and_submitted_urls():
+    gateway = GenLayerCliGateway("0x1234")
+    captured = {}
+    fetched_urls = []
+    gateway.get_trial = lambda trial_id: {
+        "trial_id": trial_id,
+        "registry_url": "https://clinicaltrials.gov/study/NCT04280705",
+    }
+    gateway._fetch_protocol_snapshot = lambda _url: '{"registry_id":"NCT04280705"}'
+
+    def fetch_snapshot(url):
+        fetched_urls.append(url)
+        return json.dumps({
+            "source_url": url,
+            "resolved_url": f"{url}/resolved",
+            "content_type": "text/html",
+            "text": "snapshot",
+        })
+
+    gateway._fetch_document_snapshot = fetch_snapshot
+    gateway.write = lambda method, args=None: captured.update(
+        {"method": method, "args": args}
+    )
+    gateway.get_report = lambda report_id: {"report_id": report_id}
+
+    gateway.submit_results(
+        "TRIAL-001",
+        "REPORT-001",
+        "  https://journal.example.org/publication  ",
+        "  https://preprints.example.org/report  ",
+    )
+
+    assert fetched_urls == [
+        "https://journal.example.org/publication",
+        "https://preprints.example.org/report",
+    ]
+    assert captured["args"][2] == "https://journal.example.org/publication"
+    assert captured["args"][3] == "https://preprints.example.org/report"
+    assert json.loads(captured["args"][5])["source_url"] == captured["args"][2]
+    assert json.loads(captured["args"][6])["source_url"] == captured["args"][3]
+
+
+def test_submit_results_rejects_snapshot_source_url_divergence_before_write():
+    gateway = GenLayerCliGateway("0x1234")
+    writes = []
+    gateway.get_trial = lambda trial_id: {
+        "trial_id": trial_id,
+        "registry_url": "https://clinicaltrials.gov/study/NCT04280705",
+    }
+    gateway._fetch_protocol_snapshot = lambda _url: '{"registry_id":"NCT04280705"}'
+    gateway._fetch_document_snapshot = lambda _url: json.dumps({
+        "source_url": "https://journal.example.org/different",
+        "resolved_url": "https://journal.example.org/different",
+        "content_type": "text/html",
+        "text": "snapshot",
+    })
+    gateway.write = lambda method, args=None: writes.append((method, args))
+
+    assert_raises(
+        GenLayerGatewayError,
+        lambda: gateway.submit_results(
+            "TRIAL-001",
+            "REPORT-001",
+            "https://journal.example.org/publication",
+            "",
+        ),
+    )
+    assert writes == []
+
+
 def test_genlayer_success_ignores_stderr_diagnostics():
     gateway = GenLayerCliGateway("0x1234")
 
@@ -490,6 +560,49 @@ def test_genlayer_write_rejects_error_receipt():
     except IntegrityCheckError as exc:
         assert "register_trial" in str(exc)
         assert transaction_hash in str(exc)
+    else:
+        raise AssertionError("expected IntegrityCheckError")
+
+
+def test_genlayer_write_rejection_includes_friendly_trace_reason():
+    gateway = GenLayerCliGateway("0x1234")
+    transaction_hash = "0x" + ("ab" * 32)
+    try:
+        gateway._validate_write_result(
+            "register_trial",
+            {
+                "transactionHash": transaction_hash,
+                "txExecutionResultName": "FINISHED_WITH_ERROR",
+                "contractError": (
+                    "trial_id 'MEDICHAIN-USER-20260719-001' already registered"
+                ),
+            },
+        )
+    except IntegrityCheckError as exc:
+        message = str(exc)
+        assert "is already registered" in message
+        assert "review the active trial" in message
+        assert f"Transaction: {transaction_hash}" in message
+    else:
+        raise AssertionError("expected IntegrityCheckError")
+
+
+def test_genlayer_write_rejection_falls_back_when_trace_is_unavailable():
+    gateway = GenLayerCliGateway("0x1234")
+    transaction_hash = "0x" + ("cd" * 32)
+    try:
+        gateway._validate_write_result(
+            "submit_results",
+            {
+                "transactionHash": transaction_hash,
+                "txExecutionResultName": "FINISHED_WITH_ERROR",
+                "contractError": None,
+            },
+        )
+    except IntegrityCheckError as exc:
+        message = str(exc)
+        assert "Bradbury rejected the submit_results contract write" in message
+        assert f"Transaction: {transaction_hash}" in message
     else:
         raise AssertionError("expected IntegrityCheckError")
 
@@ -621,6 +734,55 @@ export function createClient({ account }) {
                 ["trial", "wallet", "description", ""],
             )
         assert receipt["signedCostCeilingWei"] == "250"
+
+
+def test_bounded_transaction_runner_extracts_contract_error_from_trace():
+    fake_module = """
+export const chains = { testnetBradbury: {} };
+export function createAccount() {
+  return {
+    address: "0x1111111111111111111111111111111111111111",
+    type: "local",
+    signTransaction: async () => "0xdead"
+  };
+}
+export function createClient({ account }) {
+  return {
+    writeContract: async () => {
+      await account.signTransaction({ gas: 100n, gasPrice: 2n, value: 0n });
+      return "0x" + "12".repeat(32);
+    },
+    waitForTransactionReceipt: async () => ({
+      statusName: "FINALIZED",
+      resultName: "AGREE",
+      txExecutionResultName: "FINISHED_WITH_ERROR",
+      txDataDecoded: {}
+    }),
+    debugTraceTransaction: async () => ({
+      stderr: "Traceback\\nException: report_id 'REPORT-001' already exists\\n"
+    })
+  };
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        module_path = Path(tmp) / "fake-genlayer-js.mjs"
+        module_path.write_text(fake_module, encoding="utf-8")
+        gateway = GenLayerCliGateway(
+            "0x1111111111111111111111111111111111111111",
+            rpc_url="https://rpc.example.com",
+            private_key="ab" * 32,
+            max_transaction_cost_wei=250,
+        )
+        gateway._ready = True
+        with environment(GENLAYER_JS_MODULE=str(module_path)):
+            try:
+                gateway.write("submit_results", ["trial", "report"])
+            except IntegrityCheckError as exc:
+                message = str(exc)
+                assert "Report ID 'REPORT-001' already exists" in message
+                assert "Transaction: 0x" in message
+            else:
+                raise AssertionError("expected IntegrityCheckError")
 
 
 def test_bounded_deployment_encodes_address_arguments():

@@ -78,12 +78,48 @@ required protocol fields before storage.
 Result submission also receives bounded backend snapshots for the current
 registry, publication, and optional preprint. The backend enforces public HTTPS
 destinations, validates redirects, caps responses, and sanitizes documents to
-text. The contract binds snapshots to their submitted URLs and runs only the
+text. Publication and preprint URLs are trimmed once before fetching, then the
+same exact canonical URL is sent as the contract argument and snapshot
+`source_url`; redirects are retained only as `resolved_url`. The backend
+rejects a divergent snapshot before signing a transaction.
+
+On `FINISHED_WITH_ERROR`, the bounded transaction helper uses
+`debugTraceTransaction` when available and returns only the final sanitized
+contract exception plus the transaction hash. Trace retrieval failure falls
+back to the generic Bradbury rejection without hiding the hash.
+
+The contract binds snapshots to their submitted URLs and runs only the
 clinical assessment non-deterministically. Every validator reruns one
 structured JSON assessment and deterministic code compares the overall
 verdict, score tolerance, endpoint and sample-size decisions, actionable-fraud
 state, and critical flag types. This avoids both the extra comparator LLM call
 and the `LEADER_TIMEOUT` caused by GenVM web rendering.
+
+## July 19, 2026 Write Rejections
+
+Registration transaction
+`0x24799496ef8b2218f6e8b4ccf9da984f7b421b7e3eff3ecd2ea8b0b50cc8122c`
+was a repeated request for trial ID `MEDICHAIN-USER-20260719-001`. Its trace
+ended with `trial_id 'MEDICHAIN-USER-20260719-001' already registered`; the
+first registration had already succeeded.
+
+The rejected report transaction
+`0xdfaa28cc37c60432b4919886dba644ee34062a9b0bd9840fb1ad990d2503e999`
+decoded to:
+
+```text
+publication_url: " https://pubmed.ncbi.nlm.nih.gov/32445440/"
+publication_snapshot.source_url: " https://pubmed.ncbi.nlm.nih.gov/32445440/"
+publication_snapshot.resolved_url: "https://pubmed.ncbi.nlm.nih.gov/32445440/"
+preprint_url: ""
+```
+
+Both submitted/source values contained one leading space. The deployed
+contract strips the snapshot `source_url` before comparing it with the raw
+`publication_url`, so the normalized snapshot value no longer equaled the
+untrimmed argument. This deterministic input rejection happened before an LLM
+call. Backend and frontend URL canonicalization now remove that whitespace
+before any future snapshot/write boundary; the contract remains unchanged.
 
 Live workflow verification on this deployment:
 

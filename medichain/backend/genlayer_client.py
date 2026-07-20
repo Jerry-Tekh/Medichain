@@ -272,6 +272,7 @@ class GenLayerCliGateway:
         return self._protocol_snapshot_from_record(record, source_url)
 
     def _validate_public_https_url(self, source_url: str) -> str:
+        source_url = str(source_url or "").strip()
         parsed = urlparse(source_url)
         hostname = (parsed.hostname or "").lower().rstrip(".")
         if (
@@ -308,6 +309,37 @@ class GenLayerCliGateway:
             )
         return source_url
 
+    def _canonical_document_url(self, source_url: str) -> str:
+        source_url = str(source_url or "").strip()
+        if not source_url:
+            raise GenLayerGatewayError(
+                "document source must be a public HTTPS URL"
+            )
+        return source_url
+
+    def _require_snapshot_source_url(
+        self,
+        snapshot_json: str,
+        source_url: str,
+        field_name: str,
+    ) -> str:
+        try:
+            snapshot = json.loads(snapshot_json)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise GenLayerGatewayError(
+                f"{field_name} snapshot was not valid JSON"
+            ) from exc
+        if not isinstance(snapshot, dict):
+            raise GenLayerGatewayError(
+                f"{field_name} snapshot was not a JSON object"
+            )
+        if snapshot.get("source_url") != source_url:
+            raise GenLayerGatewayError(
+                f"{field_name} snapshot source URL did not match the "
+                "canonical submitted URL"
+            )
+        return snapshot_json
+
     def _document_snapshot_from_body(
         self,
         source_url: str,
@@ -316,6 +348,8 @@ class GenLayerCliGateway:
         body: bytes,
         charset: str = "utf-8",
     ) -> str:
+        source_url = str(source_url or "").strip()
+        resolved_url = str(resolved_url or "").strip()
         if content_type not in ALLOWED_DOCUMENT_CONTENT_TYPES:
             raise GenLayerGatewayError(
                 f"document source returned unsupported content type {content_type}"
@@ -341,7 +375,7 @@ class GenLayerCliGateway:
         }, sort_keys=True, separators=(",", ":"))
 
     def _fetch_document_snapshot(self, source_url: str) -> str:
-        self._validate_public_https_url(source_url)
+        source_url = self._canonical_document_url(source_url)
         opener = build_opener(
             _ValidatingRedirectHandler(self._validate_public_https_url)
         )
@@ -505,15 +539,87 @@ class GenLayerCliGateway:
             return ""
         return matches[-1].strip()
 
+    def _sanitize_contract_reason(self, reason: str) -> str:
+        reason = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", str(reason or ""))
+        reason = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", reason)
+        reason = re.sub(r"\s+", " ", reason).strip()
+        for prefix in ("[EXPECTED]", "[LLM_ERROR]"):
+            if reason.startswith(prefix):
+                reason = reason[len(prefix):].strip()
+        return reason[:500]
+
+    def _friendly_contract_reason(self, reason: str) -> str:
+        reason = self._sanitize_contract_reason(reason)
+        if not reason:
+            return ""
+
+        trial_duplicate = re.search(
+            r"trial_id\s+['\"]([^'\"]+)['\"]\s+already registered",
+            reason,
+            re.I,
+        )
+        if trial_duplicate:
+            return (
+                f"Trial ID '{trial_duplicate.group(1)}' is already registered. "
+                "Choose a new ID or review the active trial."
+            )
+
+        report_duplicate = re.search(
+            r"report_id\s+['\"]([^'\"]+)['\"]\s+already exists",
+            reason,
+            re.I,
+        )
+        if report_duplicate:
+            return (
+                f"Report ID '{report_duplicate.group(1)}' already exists. "
+                "Review the existing report instead of submitting it again."
+            )
+
+        unknown_trial = re.search(
+            r"unknown trial_id\s+['\"]([^'\"]+)['\"]",
+            reason,
+            re.I,
+        )
+        if unknown_trial:
+            return (
+                f"Trial ID '{unknown_trial.group(1)}' was not found. "
+                "Register the trial before continuing."
+            )
+
+        if "publication snapshot URL does not match submission" in reason:
+            return (
+                "The publication URL did not match its captured snapshot "
+                "source. Retry with the original publication URL."
+            )
+        if "preprint snapshot URL does not match submission" in reason:
+            return (
+                "The preprint URL did not match its captured snapshot source. "
+                "Retry with the original preprint URL."
+            )
+        return reason
+
     def _write_rejection_message(self, method: str, output: str) -> str:
         transaction_match = re.search(
             r"(?:Write Transaction Hash:\s*|txId:\s*['\"]|"
             r"\"transactionHash\"\s*:\s*\")(0x[0-9a-fA-F]{64})",
             output,
         )
-        message = f"Bradbury rejected the {method} contract write"
+        contract_reason = ""
+        try:
+            result = json.loads(output)
+        except json.JSONDecodeError:
+            result = {}
+        if isinstance(result, dict):
+            contract_reason = self._friendly_contract_reason(
+                result.get("contractError", "")
+            )
+
+        message = (
+            contract_reason
+            or f"Bradbury rejected the {method} contract write"
+        )
         if transaction_match:
-            message += f" (transaction {transaction_match.group(1)})"
+            message += f"\nTransaction: {transaction_match.group(1)}"
         return message
 
     def _cli_package_roots(self) -> list[Path]:
@@ -898,6 +1004,12 @@ class GenLayerCliGateway:
             current_registry_snapshot = self._fetch_protocol_snapshot(
                 registry_url
             )
+            publication_url = self._canonical_document_url(publication_url)
+            preprint_url = (
+                self._canonical_document_url(preprint_url)
+                if str(preprint_url or "").strip()
+                else ""
+            )
             publication_snapshot = self._fetch_document_snapshot(
                 publication_url
             )
@@ -906,6 +1018,17 @@ class GenLayerCliGateway:
                 if preprint_url
                 else ""
             )
+            publication_snapshot = self._require_snapshot_source_url(
+                publication_snapshot,
+                publication_url,
+                "publication",
+            )
+            if preprint_url:
+                preprint_snapshot = self._require_snapshot_source_url(
+                    preprint_snapshot,
+                    preprint_url,
+                    "preprint",
+                )
             self.write("submit_results", [
                 trial_id,
                 report_id,

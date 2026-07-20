@@ -92,6 +92,42 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function extractContractError(trace) {
+  if (!trace) return null;
+  const text = typeof trace === "string" ? trace : JSON.stringify(trace);
+  const normalized = text
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, "\"");
+  const matches = [...normalized.matchAll(
+    /(?:Exception|AssertionError|ValueError|RuntimeError):[ \t]*([^\n"]+)/g,
+  )];
+  if (matches.length === 0) return null;
+  return matches[matches.length - 1][1]
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500) || null;
+}
+
+async function readContractError(client, transactionHash) {
+  if (typeof client.debugTraceTransaction !== "function") return null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const trace = await client.debugTraceTransaction({
+        hash: transactionHash,
+        round: 0,
+      });
+      const reason = extractContractError(trace);
+      if (reason) return reason;
+    } catch (_) {
+      // Receipt metadata remains usable when the debug endpoint is unavailable.
+    }
+    if (attempt < 2) await sleep(500 * (attempt + 1));
+  }
+  return null;
+}
+
 async function waitForReceipt(client, transactionHash) {
   let lastError;
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -193,6 +229,9 @@ async function main() {
 
   process.stderr.write(`Transaction submitted: ${transactionHash}\n`);
   const receipt = await waitForReceipt(client, transactionHash);
+  const contractError = receipt.txExecutionResultName === "FINISHED_WITH_ERROR"
+    ? await readContractError(client, transactionHash)
+    : null;
   process.stdout.write(`${JSON.stringify(jsonSafe({
     transactionHash,
     signedCostCeilingWei,
@@ -200,6 +239,7 @@ async function main() {
     resultName: receipt.resultName,
     txExecutionResultName: receipt.txExecutionResultName,
     contractAddress: receipt.txDataDecoded?.contractAddress ?? null,
+    contractError,
   }))}\n`);
 }
 
