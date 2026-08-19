@@ -1,11 +1,15 @@
 """Durable wallet authentication state for challenges, users, and sessions."""
 
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 from pathlib import Path
 import sqlite3
 from typing import Iterator, Optional
+
+
+logger = logging.getLogger("medichain.auth_store")
 
 
 @dataclass(frozen=True)
@@ -126,14 +130,20 @@ class AuthStore:
             ON auth_sessions (address, created_at)
             """,
         )
-        with self._connection() as connection:
-            for statement in statements:
-                self._execute(connection, statement)
+        try:
+            with self._connection() as connection:
+                for statement in statements:
+                    self._execute(connection, statement)
+        except Exception as exc:
+            logger.warning("auth_store initialization failed: %s", exc)
 
     def ping(self) -> bool:
-        with self._connection() as connection:
-            row = self._execute(connection, "SELECT 1").fetchone()
-        return bool(row and row[0] == 1)
+        try:
+            with self._connection() as connection:
+                row = self._execute(connection, "SELECT 1").fetchone()
+            return bool(row and row[0] == 1)
+        except Exception:
+            return False
 
     def create_challenge(
         self,

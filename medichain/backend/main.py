@@ -59,7 +59,6 @@ def build_contract_gateway():
 
 
 auth_store = AuthStore(settings.auth_database_url)
-auth_store.initialize()
 auth_service = WalletAuthService(
     store=auth_store,
     jwt_secret=settings.jwt_secret,
@@ -77,7 +76,10 @@ auth_service = WalletAuthService(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    auth_store.initialize()
+    try:
+        auth_store.initialize()
+    except Exception as exc:
+        logger.warning("auth_store initialization failed during startup: %s", exc)
     yield
 
 
@@ -283,6 +285,9 @@ def ready():
         else:
             contract.list_trials()
     except (IntegrityCheckError, GenLayerGatewayError, RuntimeError) as exc:
+        logger.warning("Readiness check failed: %s", exc)
+        raise HTTPException(503, "application dependencies are unavailable") from exc
+    except Exception as exc:
         logger.warning("Readiness check failed: %s", exc)
         raise HTTPException(503, "application dependencies are unavailable") from exc
     return {
