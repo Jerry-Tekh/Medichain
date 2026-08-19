@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How It Works — MediChain</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <div>
+          <h1>MediChain</h1>
+          <p class="brand-tagline">Clinical Trial Integrity</p>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link active">How It Works</a>
+        <a href="app.html" class="nav-link">App</a>
+      </nav>
+      <div class="wallet-actions">
+        <button id="connectWalletBtn" class="btn-primary" type="button">Connect Wallet</button>
+        <button id="disconnectWalletBtn" class="btn-secondary" type="button" hidden>Disconnect</button>
+      </div>
+    </div>
+    <div class="session-bar">
+      <span id="healthDot" class="dot dot-unknown" title="System status"></span>
+      <span id="networkStatus">GenLayer Bradbury</span>
+      <span class="session-divider" aria-hidden="true"></span>
+      <span id="walletStatus">Wallet not connected</span>
+      <span id="walletRole" class="role-badge" hidden></span>
+      <input id="apiBase" type="hidden" />
+    </div>
+  </header>
+
+  <main>
+    <div class="page-header">
+      <div class="breadcrumb">
+        <a href="index.html">Home</a>
+        <span>/</span>
+        <span>How It Works</span>
+      </div>
+      <h2>How MediChain Works</h2>
+      <p>A decentralized system for ensuring clinical trial integrity from registration to final verdict.</p>
+    </div>
+
+    <div class="features" style="margin-top:2rem;">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fff7ed;color:#f97316;">&#128220;</div>
+        <h3>1. Protocol Snapshot</h3>
+        <p>When a trial is registered, the system creates an immutable snapshot of the ClinicalTrials.gov page. This captures the original hypothesis, endpoints, and sample size as ground truth.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#e8f5e9;color:#2e8b57;">&#128300;</div>
+        <h3>2. Document Fetching</h3>
+        <p>When results are submitted, the system fetches the publication URL, preprint, and registry page. It sanitizes all content and creates bounded snapshots for analysis.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fef3e2;color:#f4a261;">&#128161;</div>
+        <h3>3. LLM Integrity Check</h3>
+        <p>Multiple independent LLM validators assess the results against the protocol. They check for endpoint switching, p-hacking, sample size discrepancies, and other integrity risks.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fce8e8;color:#e63946;">&#128295;</div>
+        <h3>4. Consensus & Verdict</h3>
+        <p>Validators compare verdicts, scores, and flagged issues. If consensus indicates suspected fraud with high confidence, the trial enters a flagged state and a 14-day appeal window opens.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#f3e8ff;color:#7c3aed;">&#9878;&#65039;</div>
+        <h3>5. Appeal Process</h3>
+        <p>Regulators review flagged trials. They can dismiss the appeal (releasing the bond) or confirm fraud (slashing the bond). All decisions are recorded immutably.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fff7ed;color:#f97316;">&#128202;</div>
+        <h3>6. Transparency</h3>
+        <p>All trials, reports, flags, and appeals are publicly queryable. The dashboard provides real-time visibility into trial statuses, scores, and integrity flags.</p>
+      </div>
+    </div>
+
+    <div class="app-card" style="margin-top:3rem;max-width:100%;">
+      <h3 style="margin-bottom:1rem;font-size:1.1rem;">Technical Architecture</h3>
+      <p style="color:#64748b;margin-bottom:1rem;font-size:0.95rem;">MediChain uses a three-tier architecture:</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+        <div style="padding:1rem;background:var(--paper);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-weight:700;color:var(--accent);margin-bottom:0.25rem;">Frontend</div>
+          <div style="font-size:0.8rem;color:#64748b;">Vanilla HTML/JS<br/>Wallet Auth</div>
+        </div>
+        <div style="padding:1rem;background:var(--paper);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-weight:700;color:var(--accent);margin-bottom:0.25rem;">Backend</div>
+          <div style="font-size:0.8rem;color:#64748b;">FastAPI REST API<br/>Pydantic Validation</div>
+        </div>
+        <div style="padding:1rem;background:var(--paper);border-radius:var(--radius-sm);text-align:center;">
+          <div style="font-weight:700;color:var(--accent);margin-bottom:0.25rem;">Blockchain</div>
+          <div style="font-size:0.8rem;color:#64748b;">GenLayer Bradbury<br/>Smart Contracts</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2025 MediChain. Built on GenLayer. Secured by smart contracts.</p>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="form_submission.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

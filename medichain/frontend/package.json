@@ -1,0 +1,15 @@
+{
+  "name": "medichain-frontend",
+  "private": true,
+  "scripts": {
+    "build": "node build-config.js",
+    "test:forms": "node form_submission_test.js",
+    "test:dom": "node dom_test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  },
+  "dependencies": {
+    "css-mediaquery": "^0.1.2"
+  }
+}

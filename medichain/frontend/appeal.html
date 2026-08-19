@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resolve Appeal — MediChain</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <div>
+          <h1>MediChain</h1>
+          <p class="brand-tagline">Clinical Trial Integrity</p>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">How It Works</a>
+        <a href="app.html" class="nav-link active">App</a>
+      </nav>
+      <div class="wallet-actions">
+        <button id="connectWalletBtn" class="btn-primary" type="button">Connect Wallet</button>
+        <button id="disconnectWalletBtn" class="btn-secondary" type="button" hidden>Disconnect</button>
+      </div>
+    </div>
+    <div class="session-bar">
+      <span id="healthDot" class="dot dot-unknown" title="System status"></span>
+      <span id="networkStatus">GenLayer Bradbury</span>
+      <span class="session-divider" aria-hidden="true"></span>
+      <span id="walletStatus">Wallet not connected</span>
+      <span id="walletRole" class="role-badge" hidden></span>
+      <input id="apiBase" type="hidden" />
+    </div>
+  </header>
+
+  <main>
+    <div class="page-header">
+      <div class="breadcrumb">
+        <a href="index.html">Home</a>
+        <span>/</span>
+        <a href="about.html">How It Works</a>
+        <span>/</span>
+        <span>Resolve Appeal</span>
+      </div>
+      <h2>Resolve Appeal</h2>
+      <p>Review a flagged trial and decide whether to dismiss the appeal or confirm fraud. Regulators and admins only.</p>
+    </div>
+
+    <div class="app-card">
+      <form id="appealForm" data-auth-roles="regulator,admin">
+        <div class="form-group">
+          <label for="trial_id">Trial ID</label>
+          <input name="trial_id" id="trial_id" required placeholder="THERANOS-001" />
+        </div>
+        <div class="form-group">
+          <label for="decision">Decision</label>
+          <select name="decision" id="decision">
+            <option value="dismiss">Dismiss — Release Bond</option>
+            <option value="confirm_fraud">Confirm Fraud — Slash Bond</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Connected Resolver</label>
+          <output id="appealResolver" class="wallet-output">Not connected</output>
+        </div>
+        <button type="submit" class="btn-primary" disabled>Resolve Appeal</button>
+        <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      </form>
+      <pre class="output" id="appealOutput"></pre>
+
+      <div class="next-step">
+        <p>Flag a concern about a trial before or after results submission.</p>
+        <a href="flag.html" class="btn-primary">Next: Submit Flag</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2025 MediChain. Built on GenLayer. Secured by smart contracts.</p>
+  </footer>
+
+  <dialog id="signatureDialog">
+    <form method="dialog" class="signature-dialog">
+      <h2>Sign in to MediChain</h2>
+      <pre id="signatureMessage"></pre>
+      <div class="dialog-actions">
+        <button id="cancelSignatureBtn" type="submit" value="cancel" class="btn-secondary">Cancel</button>
+        <button id="confirmSignatureBtn" type="submit" value="confirm" class="btn-primary">Sign Message</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="form_submission.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

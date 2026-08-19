@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediChain — Clinical Trial Integrity Platform</title>
+  <meta name="description" content="Decentralized clinical trial data integrity powered by GenLayer blockchain. Register trials, submit results, resolve appeals, and maintain transparency." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <div>
+          <h1>MediChain</h1>
+          <p class="brand-tagline">Clinical Trial Integrity</p>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">How It Works</a>
+        <a href="app.html" class="nav-link">App</a>
+      </nav>
+      <div class="wallet-actions">
+        <button id="connectWalletBtn" class="btn-primary" type="button">Connect Wallet</button>
+        <button id="disconnectWalletBtn" class="btn-secondary" type="button" hidden>Disconnect</button>
+      </div>
+    </div>
+    <div class="session-bar">
+      <span id="healthDot" class="dot dot-unknown" title="System status"></span>
+      <span id="networkStatus">GenLayer Bradbury</span>
+      <span class="session-divider" aria-hidden="true"></span>
+      <span id="walletStatus">Wallet not connected</span>
+      <span id="walletRole" class="role-badge" hidden></span>
+      <input id="apiBase" type="hidden" />
+    </div>
+  </header>
+
+  <main>
+    <section class="landing-hero">
+      <h2>Trustworthy Clinical Trials<br/>On-Chain</h2>
+      <p>MediChain ensures clinical trial integrity through decentralized verification, immutable protocol snapshots, and AI-powered fraud detection on the GenLayer blockchain.</p>
+      <div class="hero-actions">
+        <a href="register.html" class="btn-primary">Get Started</a>
+        <a href="about.html" class="btn-secondary">Learn More</a>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fff7ed;color:#f97316;">&#128220;</div>
+        <h3>Immutable Registration</h3>
+        <p>Register clinical trials with protocol snapshots that cannot be altered, ensuring the original hypothesis and endpoints remain intact throughout the study.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#e8f5e9;color:#2e8b57;">&#128300;</div>
+        <h3>AI Integrity Analysis</h3>
+        <p>Advanced LLM-based analysis detects outcome switching, p-hacking, sample size discrepancies, and other integrity risks in submitted results.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fef3e2;color:#f4a261;">&#128274;</div>
+        <h3>Bond Guarantees</h3>
+        <p>Sponsors post integrity bonds that are held in escrow. Fraud findings trigger automatic bond slashing, while clean results release the bond.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fce8e8;color:#e63946;">&#128176;</div>
+        <h3>Transparent Appeals</h3>
+        <p>Regulators can review suspected fraud findings through a structured appeal process, with all decisions recorded immutably on-chain.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#f3e8ff;color:#7c3aed;">&#128272;</div>
+        <h3>Whistleblower Protection</h3>
+        <p>Authorized users can flag concerns with evidence. All flags are timestamped and linked to trials, creating a permanent audit trail.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:#fff7ed;color:#f97316;">&#128200;</div>
+        <h3>Live Dashboard</h3>
+        <p>Monitor all trials, integrity scores, verdicts, and flags in real-time through a comprehensive dashboard with drill-down detail views.</p>
+      </div>
+    </section>
+
+    <section class="how-it-works">
+      <h2>How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <h4>Register Trial</h4>
+          <p>Sponsors register trials with ClinicalTrials.gov URLs, hypotheses, endpoints, and post an integrity bond.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <h4>Submit Results</h4>
+          <p>Submit publication URLs and preprints. The system fetches and analyzes documents for integrity risks.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <h4>AI Analysis</h4>
+          <p>LLM validators independently assess results, flagging concerns like outcome switching or p-hacking.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <h4>Appeal & Resolve</h4>
+          <p>Regulators review flagged trials. Appeals result in bond release or slashing, finalizing the trial status.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">5</div>
+          <h4>Monitor Dashboard</h4>
+          <p>Track all trials, scores, verdicts, and flags through the live integrity dashboard.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2025 MediChain. Built on GenLayer. Secured by smart contracts.</p>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="form_submission.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

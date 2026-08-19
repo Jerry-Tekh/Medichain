@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Submit Results — MediChain</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <div>
+          <h1>MediChain</h1>
+          <p class="brand-tagline">Clinical Trial Integrity</p>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">How It Works</a>
+        <a href="app.html" class="nav-link active">App</a>
+      </nav>
+      <div class="wallet-actions">
+        <button id="connectWalletBtn" class="btn-primary" type="button">Connect Wallet</button>
+        <button id="disconnectWalletBtn" class="btn-secondary" type="button" hidden>Disconnect</button>
+      </div>
+    </div>
+    <div class="session-bar">
+      <span id="healthDot" class="dot dot-unknown" title="System status"></span>
+      <span id="networkStatus">GenLayer Bradbury</span>
+      <span class="session-divider" aria-hidden="true"></span>
+      <span id="walletStatus">Wallet not connected</span>
+      <span id="walletRole" class="role-badge" hidden></span>
+      <input id="apiBase" type="hidden" />
+    </div>
+  </header>
+
+  <main>
+    <div class="page-header">
+      <div class="breadcrumb">
+        <a href="index.html">Home</a>
+        <span>/</span>
+        <a href="about.html">How It Works</a>
+        <span>/</span>
+        <span>Submit Results</span>
+      </div>
+      <h2>Submit Results for Analysis</h2>
+      <p>Submit publication and preprint URLs for AI-powered integrity analysis against the registered protocol.</p>
+    </div>
+
+    <div class="app-card">
+      <form id="submitForm" data-auth-roles="sponsor,admin">
+        <div class="form-group">
+          <label for="trial_id">Trial ID</label>
+          <input name="trial_id" id="trial_id" required placeholder="THERANOS-001" />
+        </div>
+        <div class="form-group">
+          <label for="report_id">Report ID <span class="optional">(unique identifier)</span></label>
+          <input name="report_id" id="report_id" required placeholder="report-001" />
+        </div>
+        <div class="form-group">
+          <label for="publication_url">Publication URL <span class="optional">(required)</span></label>
+          <input name="publication_url" id="publication_url" required placeholder="https://pubmed.ncbi.nlm.nih.gov/..." />
+        </div>
+        <div class="form-group">
+          <label for="preprint_url">Preprint URL <span class="optional">(optional)</span></label>
+          <input name="preprint_url" id="preprint_url" placeholder="https://arxiv.org/abs/..." />
+        </div>
+        <button type="submit" class="btn-primary" disabled>Submit Results for Analysis</button>
+        <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      </form>
+      <pre class="output" id="submitOutput"></pre>
+
+      <div class="next-step">
+        <p>Need to review a flagged trial? Resolve an appeal.</p>
+        <a href="appeal.html" class="btn-primary">Next: Resolve Appeal</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2025 MediChain. Built on GenLayer. Secured by smart contracts.</p>
+  </footer>
+
+  <dialog id="signatureDialog">
+    <form method="dialog" class="signature-dialog">
+      <h2>Sign in to MediChain</h2>
+      <pre id="signatureMessage"></pre>
+      <div class="dialog-actions">
+        <button id="cancelSignatureBtn" type="submit" value="cancel" class="btn-secondary">Cancel</button>
+        <button id="confirmSignatureBtn" type="submit" value="confirm" class="btn-primary">Sign Message</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="form_submission.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

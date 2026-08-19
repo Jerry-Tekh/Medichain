@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediChain App — Clinical Trial Integrity</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand">
+        <div>
+          <h1>MediChain</h1>
+          <p class="brand-tagline">Clinical Trial Integrity</p>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">How It Works</a>
+        <a href="app.html" class="nav-link active">App</a>
+      </nav>
+      <div class="wallet-actions">
+        <button id="connectWalletBtn" class="btn-primary" type="button">Connect Wallet</button>
+        <button id="disconnectWalletBtn" class="btn-secondary" type="button" hidden>Disconnect</button>
+      </div>
+    </div>
+    <div class="session-bar">
+      <span id="healthDot" class="dot dot-unknown" title="System status"></span>
+      <span id="networkStatus">GenLayer Bradbury</span>
+      <span class="session-divider" aria-hidden="true"></span>
+      <span id="walletStatus">Wallet not connected</span>
+      <span id="walletRole" class="role-badge" hidden></span>
+      <input id="apiBase" type="hidden" />
+    </div>
+  </header>
+
+  <main>
+    <div class="page-header">
+      <div class="breadcrumb">
+        <a href="index.html">Home</a>
+        <span>/</span>
+        <a href="about.html">How It Works</a>
+        <span>/</span>
+        <span>Application</span>
+      </div>
+      <h2>MediChain Application</h2>
+      <p>Register trials, submit results, resolve appeals, flag issues, and monitor integrity — all from one place.</p>
+    </div>
+
+    <div class="app-tabs">
+      <button class="tab-btn active" data-tab="register">Register Trial</button>
+      <button class="tab-btn" data-tab="submit">Submit Results</button>
+      <button class="tab-btn" data-tab="appeal">Resolve Appeal</button>
+      <button class="tab-btn" data-tab="flag">Submit Flag</button>
+      <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+    </div>
+
+    <div class="tab-content">
+      <!-- Register Trial -->
+      <section id="tab-register" class="tab-panel active">
+        <div class="app-card">
+          <form id="registerForm" data-auth-roles="sponsor,admin">
+            <div class="form-group">
+              <label for="trial_id">Trial ID <span class="optional">(e.g. THERANOS-001)</span></label>
+              <input name="trial_id" id="trial_id" required placeholder="THERANOS-001" />
+            </div>
+            <div class="form-group">
+              <label for="clinicaltrials_gov_url">ClinicalTrials.gov URL</label>
+              <input name="clinicaltrials_gov_url" id="clinicaltrials_gov_url" required placeholder="https://clinicaltrials.gov/study/THERANOS-001" />
+            </div>
+            <div class="form-group">
+              <label for="primary_hypothesis">Primary Hypothesis</label>
+              <input name="primary_hypothesis" id="primary_hypothesis" required placeholder="e.g. The device improves accuracy by 20% over standard care" />
+            </div>
+            <div class="form-group">
+              <label for="primary_endpoints">Primary Endpoints <span class="optional">(comma-separated)</span></label>
+              <input name="primary_endpoints" id="primary_endpoints" required placeholder="sensitivity, specificity, accuracy" />
+            </div>
+            <div class="form-group">
+              <label for="expected_sample_size">Expected Sample Size</label>
+              <input name="expected_sample_size" id="expected_sample_size" type="number" required placeholder="1000" />
+            </div>
+            <div class="form-group">
+              <label>Connected Sponsor</label>
+              <output id="registerSponsor" class="wallet-output">Not connected</output>
+            </div>
+            <div class="form-group">
+              <label for="integrity_bond">Integrity Bond (GEN)</label>
+              <input name="integrity_bond" id="integrity_bond" type="number" required placeholder="100" />
+            </div>
+            <button type="submit" class="btn-primary" disabled>Register Trial</button>
+            <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+          <pre class="output" id="registerOutput"></pre>
+        </div>
+      </section>
+
+      <!-- Submit Results -->
+      <section id="tab-submit" class="tab-panel">
+        <div class="app-card">
+          <form id="submitForm" data-auth-roles="sponsor,admin">
+            <div class="form-group">
+              <label for="trial_id">Trial ID</label>
+              <input name="trial_id" id="trial_id" required placeholder="THERANOS-001" />
+            </div>
+            <div class="form-group">
+              <label for="report_id">Report ID <span class="optional">(unique identifier)</span></label>
+              <input name="report_id" id="report_id" required placeholder="report-001" />
+            </div>
+            <div class="form-group">
+              <label for="publication_url">Publication URL <span class="optional">(required)</span></label>
+              <input name="publication_url" id="publication_url" required placeholder="https://pubmed.ncbi.nlm.nih.gov/..." />
+            </div>
+            <div class="form-group">
+              <label for="preprint_url">Preprint URL <span class="optional">(optional)</span></label>
+              <input name="preprint_url" id="preprint_url" placeholder="https://arxiv.org/abs/..." />
+            </div>
+            <button type="submit" class="btn-primary" disabled>Submit Results for Analysis</button>
+            <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+          <pre class="output" id="submitOutput"></pre>
+        </div>
+      </section>
+
+      <!-- Resolve Appeal -->
+      <section id="tab-appeal" class="tab-panel">
+        <div class="app-card">
+          <form id="appealForm" data-auth-roles="regulator,admin">
+            <div class="form-group">
+              <label for="trial_id">Trial ID</label>
+              <input name="trial_id" id="trial_id" required placeholder="THERANOS-001" />
+            </div>
+            <div class="form-group">
+              <label for="decision">Decision</label>
+              <select name="decision" id="decision">
+                <option value="dismiss">Dismiss — Release Bond</option>
+                <option value="confirm_fraud">Confirm Fraud — Slash Bond</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Connected Resolver</label>
+              <output id="appealResolver" class="wallet-output">Not connected</output>
+            </div>
+            <button type="submit" class="btn-primary" disabled>Resolve Appeal</button>
+            <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+          <pre class="output" id="appealOutput"></pre>
+        </div>
+      </section>
+
+      <!-- Submit Flag -->
+      <section id="tab-flag" class="tab-panel">
+        <div class="app-card">
+          <form id="flagForm" data-auth-roles="sponsor,regulator,admin">
+            <div class="form-group">
+              <label for="trial_id">Trial ID</label>
+              <input name="trial_id" id="trial_id" required placeholder="THERANOS-001" />
+            </div>
+            <div class="form-group">
+              <label>Connected Submitter</label>
+              <output id="flagSubmitter" class="wallet-output">Not connected</output>
+            </div>
+            <div class="form-group">
+              <label for="description">Description</label>
+              <textarea name="description" id="description" required placeholder="Describe your concern in detail..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="evidence_url">Evidence URL <span class="optional">(optional)</span></label>
+              <input name="evidence_url" id="evidence_url" placeholder="https://..." />
+            </div>
+            <button type="submit" class="btn-primary" disabled>Submit Flag</button>
+            <p class="form-status" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+          <pre class="output" id="flagOutput"></pre>
+        </div>
+      </section>
+
+      <!-- Dashboard -->
+      <section id="tab-dashboard" class="tab-panel">
+        <div class="dashboard-header">
+          <div>
+            <h2>Integrity Dashboard</h2>
+            <p>Monitor all registered trials, integrity scores, verdicts, and whistleblower flags.</p>
+          </div>
+          <button id="refreshBtn" class="refresh-btn">Refresh Trials</button>
+        </div>
+        <div class="table-container">
+          <div style="overflow-x:auto;">
+            <table class="data-table" id="trialsTable">
+              <thead>
+                <tr>
+                  <th>Trial ID</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                  <th>Verdict</th>
+                  <th>Bond</th>
+                  <th>Integrity Flags</th>
+                  <th>Whistleblower Flags</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2025 MediChain. Built on GenLayer. Secured by smart contracts.</p>
+  </footer>
+
+  <dialog id="signatureDialog">
+    <form method="dialog" class="signature-dialog">
+      <h2>Sign in to MediChain</h2>
+      <pre id="signatureMessage"></pre>
+      <div class="dialog-actions">
+        <button id="cancelSignatureBtn" type="submit" value="cancel" class="btn-secondary">Cancel</button>
+        <button id="confirmSignatureBtn" type="submit" value="confirm" class="btn-primary">Sign Message</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="form_submission.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
