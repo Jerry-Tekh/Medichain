@@ -10,6 +10,7 @@ import os
 import ipaddress
 import logging
 import sys
+import traceback
 from typing import Annotated, List, Literal, Optional
 from urllib.parse import urlparse
 
@@ -381,6 +382,7 @@ def submit_results(
             raise HTTPException(403, "only the trial sponsor can submit results")
         return contract.submit_results(**req.model_dump())
     except (IntegrityCheckError, GenLayerGatewayError) as exc:
+        logger.error("submit_results failed: %s\n%s", exc, traceback.format_exc())
         raise _contract_http_error(exc, 400) from exc
 
 
