@@ -470,7 +470,36 @@ function initSubmitForm() {
           );
         }
 
-        showOutput("submitOutput", JSON.stringify(guarded.value, null, 2));
+        const jobId = guarded.value?.job_id;
+        if (!jobId) {
+          showOutput("submitOutput", JSON.stringify(guarded.value, null, 2));
+          setFormStatus(form, "Results submitted and analyzed.");
+          return;
+        }
+
+        setFormStatus(form, "GenLayer consensus in progress...");
+        const deadline = Date.now() + 10 * 60 * 1000;
+        let reportData = null;
+        for (;;) {
+          if (Date.now() > deadline) {
+            throw new Error("GenLayer consensus timed out. Try again in a few minutes.");
+          }
+          const jobStatus = await callApi(`/api/jobs/${encodeURIComponent(jobId)}`);
+          if (jobStatus.status === "complete") {
+            reportData = jobStatus.result;
+            break;
+          }
+          if (jobStatus.status === "failed") {
+            throw new Error(`Analysis failed: ${jobStatus.error || "unknown error"}`);
+          }
+          await new Promise((r) => setTimeout(r, 10000));
+        }
+
+        if (reportData) {
+          showOutput("submitOutput", JSON.stringify(reportData, null, 2));
+        } else {
+          showOutput("submitOutput", "Analysis completed but no report available.");
+        }
         setFormStatus(form, "Results submitted and analyzed.");
       } catch (err) {
         showOutput("submitOutput", "Error: " + err.message);
