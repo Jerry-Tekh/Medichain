@@ -9,16 +9,19 @@
 
 ## Current Verified Contract
 
-- Contract: `0x6207D84A866919Daa876b902E3ab51F5560F10CB`
-- Deployment transaction:
-  `0xc9c572ddc5e613765eb84667fd96ffac1c05b715c142846e05e31166908278d9`
-- Receipt: `ACCEPTED`
-- Consensus: `AGREE`
-- Execution: `FINISHED_WITH_RETURN`
-- Schema: verified
-- Signed deployment ceiling: `3802801463972700` wei (about `0.00380 GEN`)
+- Contract: `0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f`
+- Schema: verified (`register_trial`, `submit_results`, `submit_flag`,
+  `resolve_appeal`, `get_owner`, `get_treasury_address`)
 - Owner: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
 - Treasury: `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
+
+End-to-end verified on 2026-08-21 against the production backend: wallet-signature
+login, `register_trial` (ClinicalTrials.gov protocol snapshot), `submit_results`
+(non-deterministic integrity verdict), and `submit_flag` each returned an
+`AGREE` / `FINISHED_WITH_RETURN` receipt through the bounded signer. `submit_results`
+against the ACTT-1 publication for `NCT04280705` finalized a `clean` verdict with
+matching endpoints and consistent sample size. `/api/ready` and `/api/health`
+report this contract address and the matching relayer owner above.
 
 This deployment stores the Render relayer as the contract owner. Every
 state-changing method checks `gl.message.sender_address` against that owner,
@@ -140,16 +143,16 @@ matching endpoints and sample size.
 python3 medichain/scripts/check_genlayer_adapter.py
 
 npx -y genlayer@0.39.2 schema \
-  0x6207D84A866919Daa876b902E3ab51F5560F10CB \
+  0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x6207D84A866919Daa876b902E3ab51F5560F10CB \
+  0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f \
   get_owner \
   --rpc https://rpc-bradbury.genlayer.com
 
 npx -y genlayer@0.39.2 call \
-  0x6207D84A866919Daa876b902E3ab51F5560F10CB \
+  0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f \
   get_treasury_address \
   --rpc https://rpc-bradbury.genlayer.com
 ```
@@ -204,6 +207,11 @@ address until execution is `FINISHED_WITH_RETURN` and schema/read checks pass.
 
 ## Previous Contracts
 
+- `0x6207D84A866919Daa876b902E3ab51F5560F10CB`: prior owned production
+  deployment (deployment transaction
+  `0xc9c572ddc5e613765eb84667fd96ffac1c05b715c142846e05e31166908278d9`,
+  `AGREE`, `FINISHED_WITH_RETURN`, signed ceiling about `0.00380 GEN`),
+  superseded by the current contract above
 - `0x05ECcb86D107c4AbC1ebb4cb4C1E38182c38213C`: previous owned production
   deployment using the generic comparative wrapper
 - `0x90310690724e359F0cEc0825A45F3e8a95f0B411`: experimental structured-output

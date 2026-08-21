@@ -5,7 +5,7 @@ Production API writes are authorized by wallet-signature sessions and relayed
 to the owner-restricted GenLayer Bradbury contract:
 
 ```text
-0x6207D84A866919Daa876b902E3ab51F5560F10CB
+0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f
 ```
 
 ## Render
@@ -36,7 +36,7 @@ If the existing Render service was created manually instead of from
 ```env
 MEDICHAIN_ENV=production
 MEDICHAIN_BACKEND_MODE=genlayer
-MEDICHAIN_CONTRACT_ADDRESS=0x6207D84A866919Daa876b902E3ab51F5560F10CB
+MEDICHAIN_CONTRACT_ADDRESS=0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f
 GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
 GENLAYER_NETWORK=testnet-bradbury
 GENLAYER_ACCOUNT_NAME=medichain-production
@@ -67,7 +67,7 @@ fails, the first startup error in the Render logs names the missing or invalid
 variable.
 
 After deployment, `/api/health` must report
-`0x6207D84A866919Daa876b902E3ab51F5560F10CB`. A dashboard variable can
+`0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f`. A dashboard variable can
 override `render.yaml`, so a healthy service that reports any previous
 contract address has not completed the production switch.
 
