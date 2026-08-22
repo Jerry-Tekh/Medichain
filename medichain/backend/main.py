@@ -108,7 +108,6 @@ app.add_middleware(
 )
 
 contract = build_contract_gateway()
-job_store = JobStore()
 
 
 class JobStatus(str, Enum):
@@ -167,6 +166,9 @@ class JobStore:
     def get(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             return self._jobs.get(job_id)
+
+
+job_store = JobStore()
 
 
 def _contract_http_error(exc: Exception, status_code: int) -> HTTPException:
