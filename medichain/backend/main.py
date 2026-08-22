@@ -6,12 +6,17 @@ authentication backed by wallet signatures.
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from enum import Enum
 import os
 import ipaddress
 import logging
 import sys
+import threading
+import time
 import traceback
-from typing import Annotated, List, Literal, Optional
+import uuid
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -103,6 +108,65 @@ app.add_middleware(
 )
 
 contract = build_contract_gateway()
+job_store = JobStore()
+
+
+class JobStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class JobStore:
+    _lock: threading.Lock
+    _jobs: Dict[str, Dict[str, Any]]
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._jobs = {}
+
+    def create(self, job_type: str) -> str:
+        job_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._jobs[job_id] = {
+                "job_id": job_id,
+                "job_type": job_type,
+                "status": JobStatus.PENDING,
+                "created_at": now,
+                "updated_at": now,
+                "result": None,
+                "error": None,
+            }
+        return job_id
+
+    def set_status(self, job_id: str, status: JobStatus) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id]["status"] = status.value
+                self._jobs[job_id]["updated_at"] = now
+
+    def set_result(self, job_id: str, result: Any) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id]["status"] = JobStatus.COMPLETE.value
+                self._jobs[job_id]["result"] = result
+                self._jobs[job_id]["updated_at"] = now
+
+    def set_error(self, job_id: str, error: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id]["status"] = JobStatus.FAILED.value
+                self._jobs[job_id]["error"] = error
+                self._jobs[job_id]["updated_at"] = now
+
+    def get(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            return self._jobs.get(job_id)
 
 
 def _contract_http_error(exc: Exception, status_code: int) -> HTTPException:
@@ -380,10 +444,36 @@ def submit_results(
             and str(trial.get("sponsor", "")).lower() != principal.address
         ):
             raise HTTPException(403, "only the trial sponsor can submit results")
-        return contract.submit_results(**req.model_dump())
     except (IntegrityCheckError, GenLayerGatewayError) as exc:
-        logger.error("submit_results failed: %s\n%s", exc, traceback.format_exc())
+        logger.error("submit_results pre-check failed: %s\n%s", exc, traceback.format_exc())
         raise _contract_http_error(exc, 400) from exc
+
+    job_id = job_store.create("submit_results")
+
+    def _run_submit_results() -> None:
+        try:
+            job_store.set_status(job_id, JobStatus.PROCESSING)
+            result = contract.submit_results(**req.model_dump())
+            job_store.set_result(job_id, result)
+        except (IntegrityCheckError, GenLayerGatewayError) as exc:
+            logger.error("submit_results job %s failed: %s\n%s", job_id, exc, traceback.format_exc())
+            job_store.set_error(job_id, str(exc))
+        except Exception as exc:
+            logger.error("submit_results job %s crashed: %s\n%s", job_id, exc, traceback.format_exc())
+            job_store.set_error(job_id, str(exc))
+
+    thread = threading.Thread(target=_run_submit_results, daemon=True, name=f"job-{job_id}")
+    thread.start()
+
+    return {"job_id": job_id, "status": JobStatus.PROCESSING.value}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_status(job_id: str):
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(404, f"job not found: {job_id}")
+    return job
 
 
 @app.post("/api/resolve_appeal")

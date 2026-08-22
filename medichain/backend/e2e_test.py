@@ -6,6 +6,7 @@ then exercises the full authenticated flow against the production backend.
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -34,7 +35,6 @@ PRIVATE_KEY = os.getenv("PRIVATE_KEY", "").strip()
 if not WALLET_ADDRESS or not PRIVATE_KEY:
     sys.exit("ERROR: WALLET_ADDRESS and PRIVATE_KEY must be set in .env")
 
-import time
 TRIAL_ID = f"E2E-TEST-{time.strftime('%Y%m%d-%H%M%S')}"
 REPORT_ID = f"e2e-report-{int(time.time())}"
 
@@ -89,11 +89,36 @@ def submit_results(headers):
         "publication_url": "https://example.com",
         "preprint_url": "",
     }
-    resp = requests.post(f"{BASE}/api/submit_results", json=payload, headers=headers, timeout=120)
+    resp = requests.post(f"{BASE}/api/submit_results", json=payload, headers=headers, timeout=60)
     if not resp.ok:
         print(f"    WARNING: submit_results returned {resp.status_code}: {resp.text[:200]}")
         return None
-    return resp.json()
+    job_data = resp.json()
+    job_id = job_data.get("job_id")
+    print(f"    job_id={job_id[:8]}... status={job_data.get('status')}")
+
+    deadline = time.time() + 600
+    while time.time() < deadline:
+        poll = requests.get(f"{BASE}/api/jobs/{job_id}", timeout=30)
+        if poll.ok:
+            status = poll.json()
+            current = status.get("status")
+            if current == "complete":
+                result = status.get("result")
+                if result:
+                    print(f"    verdict={result.get('verdict')} confidence={result.get('confidence')}")
+                    return result
+                print(f"    complete but no result field")
+                return status
+            elif current == "failed":
+                print(f"    job failed: {status.get('error', 'unknown')[:200]}")
+                return None
+            else:
+                print(f"    polling... status={current} ({int(time.time() - (deadline - 600))}s)")
+        time.sleep(10)
+
+    print("    job timed out after 600s")
+    return None
 
 
 def submit_flag(headers):

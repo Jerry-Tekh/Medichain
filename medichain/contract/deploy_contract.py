@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_PATH = ROOT / ".env"
 if ENV_PATH.exists():
     with open(ENV_PATH, "r", encoding="utf-8") as f:

@@ -295,21 +295,22 @@ set +a
 GENLAYER_CLI_COMMAND='npx -y genlayer@0.39.2' \
   python3 medichain/scripts/deploy_bradbury.py
 
-npx -y genlayer@0.39.2 schema 0x6207D84A866919Daa876b902E3ab51F5560F10CB
-npx -y genlayer@0.39.2 call 0x6207D84A866919Daa876b902E3ab51F5560F10CB get_treasury_address
-npx -y genlayer@0.39.2 call 0x6207D84A866919Daa876b902E3ab51F5560F10CB get_owner
+npx -y genlayer@0.39.2 schema 0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f
+npx -y genlayer@0.39.2 call 0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f get_treasury_address
+npx -y genlayer@0.39.2 call 0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f get_owner
 ```
 
 Current corrected Bradbury deploy:
 
-- Contract: `0x6207D84A866919Daa876b902E3ab51F5560F10CB`
-- Deployment transaction:
-  `0xc9c572ddc5e613765eb84667fd96ffac1c05b715c142846e05e31166908278d9`
-- Receipt result: `ACCEPTED`, `AGREE`, `FINISHED_WITH_RETURN`
-- Schema: retrieved successfully
-- `get_treasury_address`: read successfully
-- `get_owner`: returns the Render relayer address
-- Signed deployment ceiling: about `0.00380 GEN`
+- Contract: `0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f`
+- Schema: retrieved successfully (`register_trial`, `submit_results`,
+  `submit_flag`, `resolve_appeal`, `get_owner`, `get_treasury_address`)
+- `get_treasury_address` and `get_owner`: read successfully; owner is the
+  Render relayer `0x1847d40a1fc2b69101d943f23ea35bd3774889d7`
+- End-to-end verified on 2026-08-21: wallet login, `register_trial`,
+  `submit_results` (a `clean` integrity verdict on the ACTT-1 publication for
+  `NCT04280705`), and `submit_flag` each finalized with `AGREE` /
+  `FINISHED_WITH_RETURN`; `/api/health` and `/api/ready` report this address
 
 The backend fetches the official ClinicalTrials.gov API record and creates a
 canonical protocol snapshot before `register_trial`. The contract validates
@@ -390,7 +391,7 @@ GenLayer adapter.
 ## Deploying to GenLayer Bradbury
 
 The production contract is already deployed at
-`0x6207D84A866919Daa876b902E3ab51F5560F10CB`. Verify the adapter before any
+`0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f`. Verify the adapter before any
 future redeploy:
 
 1. Run the repository's Bradbury check:
@@ -399,7 +400,7 @@ future redeploy:
    ```
 2. Verify the deployed schema:
    ```bash
-   npx -y genlayer@0.39.2 schema 0x6207D84A866919Daa876b902E3ab51F5560F10CB
+   npx -y genlayer@0.39.2 schema 0x1885e3eFbCDA5480eE5e0c70D805909A474aD06f
    ```
 3. Deploy only `contract/genlayer_adapter.py` as the single-file
    contract. The local `medichain_contract.py` remains the FastAPI test
