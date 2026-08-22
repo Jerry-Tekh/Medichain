@@ -1058,31 +1058,20 @@ class GenLayerCliGateway:
         publication_snapshot: str,
         preprint_snapshot: str,
     ) -> str:
-        from medichain_contract import _build_integrity_prompt, _parse_integrity_result
+        from medichain_contract import _build_prompt, _parse_llm_json, _validate_llm_result
         from mock_llm import mock_llm_client
 
         trial = self.get_trial(trial_id)
-        protocol_snapshot = str(trial.get("protocol_snapshot", ""))
-        registry_url = str(trial.get("registry_url", ""))
-        hypothesis = str(trial.get("hypothesis", ""))
-        endpoints_json = str(trial.get("endpoints_json", "[]"))
-        expected_n = int(trial.get("expected_n", 0) or 0)
-
-        current_registry = self._fetch_protocol_snapshot(registry_url)
+        current_registry = self._fetch_protocol_snapshot(
+            str(trial.get("registry_url", ""))
+        )
         paper = publication_snapshot
         preprint_text = preprint_snapshot if preprint_url else ""
 
-        prompt = _build_integrity_prompt(
-            protocol_snapshot,
-            current_registry,
-            hypothesis,
-            endpoints_json,
-            expected_n,
-            paper,
-            preprint_text,
-        )
+        prompt = _build_prompt(trial, current_registry, paper, preprint_text)
         raw_response = mock_llm_client(prompt)
-        result = _parse_integrity_result(raw_response)
+        result = _parse_llm_json(raw_response)
+        _validate_llm_result(result)
         return json.dumps(result)
 
     def resolve_appeal(self, trial_id, decision, resolver):
