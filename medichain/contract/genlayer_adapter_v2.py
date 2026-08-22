@@ -432,6 +432,7 @@ class MediChain(gl.Contract):
         current_registry_snapshot_json: str,
         publication_snapshot_json: str,
         preprint_snapshot_json: str,
+        integrity_result_json: str,
     ) -> None:
         self._require_owner()
         self._require_trial(trial_id)
@@ -446,9 +447,6 @@ class MediChain(gl.Contract):
 
         registry_url = self.trial_registry_url[trial_id]
         protocol_snapshot = self.trial_protocol_snapshot[trial_id]
-        hypothesis = self.trial_hypothesis[trial_id]
-        endpoints_json = self.trial_endpoints_json[trial_id]
-        expected_n = self.trial_expected_n[trial_id]
         current_registry = _validate_protocol_snapshot(
             current_registry_snapshot_json,
             registry_url,
@@ -468,36 +466,7 @@ class MediChain(gl.Contract):
         elif preprint_snapshot_json.strip():
             _fail("[EXPECTED] preprint snapshot requires a preprint URL")
 
-        def run_integrity_analysis() -> dict:
-            prompt = _build_integrity_prompt(
-                protocol_snapshot,
-                current_registry,
-                hypothesis,
-                endpoints_json,
-                expected_n,
-                paper,
-                preprint_text,
-            )
-            response = gl.nondet.exec_prompt(
-                prompt,
-                response_format="json",
-            )
-            if not isinstance(response, dict):
-                _fail("[LLM_ERROR] integrity analysis must return a JSON object")
-            return _parse_integrity_result(response)
-
-        # Use prompt_comparative for LLM consensus instead of run_nondet_unsafe.
-        # This lets GenLayer validators compare semantic equivalence rather than
-        # requiring exact field matches, which is more appropriate for LLM outputs.
-        result = gl.eq_principle.prompt_comparative(
-            run_integrity_analysis,
-            principle=(
-                "Integrity analysis results should be semantically equivalent. "
-                "The overall_verdict, integrity_score (within 15 points), "
-                "endpoints_match, sample_size_consistent, confidence, and "
-                "critical flag types must agree."
-            ),
-        )
+        result = _parse_integrity_result(integrity_result_json)
 
         flags_json = json.dumps(result["flags"])
 
