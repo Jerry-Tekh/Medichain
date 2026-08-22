@@ -26,13 +26,25 @@ if ENV_PATH.exists():
             if key and value:
                 os.environ.setdefault(key, value)
 
+GENLAYER_ETHERS_MODULE = os.getenv("GENLAYER_ETHERS_MODULE", "")
+if not GENLAYER_ETHERS_MODULE:
+    npm_global = Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules"
+    candidate = npm_global / "genlayer" / "node_modules" / "ethers" / "lib.esm" / "index.js"
+    if candidate.exists():
+        GENLAYER_ETHERS_MODULE = str(candidate)
+
+GENLAYER_JS_MODULE = os.getenv("GENLAYER_JS_MODULE", "")
+if not GENLAYER_JS_MODULE:
+    npm_global = Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules"
+    candidate = npm_global / "genlayer" / "node_modules" / "genlayer-js" / "dist" / "index.js"
+    if candidate.exists():
+        GENLAYER_JS_MODULE = str(candidate)
+
 PRIVATE_KEY = os.getenv("PRIVATE_KEY", "")
 KEYSTORE_PASSWORD = os.getenv("GENLAYER_KEYSTORE_PASSWORD", "")
 RPC_URL = os.getenv("GENLAYER_RPC_URL", "")
 NETWORK = os.getenv("GENLAYER_NETWORK", "testnet-bradbury")
 ACCOUNT_NAME = os.getenv("GENLAYER_ACCOUNT_NAME", "medichain-production")
-GENLAYER_JS_MODULE = os.getenv("GENLAYER_JS_MODULE", "")
-GENLAYER_ETHERS_MODULE = os.getenv("GENLAYER_ETHERS_MODULE", "")
 
 if not PRIVATE_KEY:
     sys.exit("ERROR: PRIVATE_KEY is not set in .env")
@@ -67,6 +79,7 @@ def run(cmd, stdin=None, extra_env=None):
 
 
 print("Setting up GenLayer signer...")
+print(f"GENLAYER_ETHERS_MODULE={GENLAYER_ETHERS_MODULE}")
 setup_result = run(
     ["node", str(SETUP_SCRIPT)],
     stdin=json.dumps({
@@ -82,6 +95,7 @@ if setup_result.returncode != 0:
 print(setup_result.stdout.strip())
 
 print("\nDeploying contract...")
+print(f"GENLAYER_JS_MODULE={GENLAYER_JS_MODULE}")
 tx_payload = json.dumps({
     "action": "deploy",
     "private_key": PRIVATE_KEY,
