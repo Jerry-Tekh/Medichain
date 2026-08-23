@@ -79,7 +79,6 @@ def run(cmd, stdin=None, extra_env=None):
 
 
 print("Setting up GenLayer signer...")
-print(f"GENLAYER_ETHERS_MODULE={GENLAYER_ETHERS_MODULE}")
 setup_result = run(
     ["node", str(SETUP_SCRIPT)],
     stdin=json.dumps({
@@ -95,7 +94,6 @@ if setup_result.returncode != 0:
 print(setup_result.stdout.strip())
 
 print("\nDeploying contract...")
-print(f"GENLAYER_JS_MODULE={GENLAYER_JS_MODULE}")
 tx_payload = json.dumps({
     "action": "deploy",
     "private_key": PRIVATE_KEY,
