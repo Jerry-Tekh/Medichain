@@ -57,6 +57,102 @@ ALLOWED_DOCUMENT_CONTENT_TYPES = frozenset({
 })
 
 
+def _build_prompt(trial, current_registry, paper, preprint_text):
+    return f"""
+You are a clinical trial data integrity specialist. Assess whether this published result is consistent with the pre-registered protocol.
+
+PRE-REGISTERED PROTOCOL (snapshot at registration):
+{trial.get('protocol_snapshot', '')[:2000]}
+
+CURRENT REGISTRY STATE (may show amendments):
+{current_registry[:2000]}
+
+PRE-REGISTERED HYPOTHESIS: {trial.get('hypothesis', '')}
+PRE-REGISTERED PRIMARY ENDPOINTS: {', '.join(trial.get('endpoints', []))}
+EXPECTED SAMPLE SIZE: {trial.get('expected_n', 0)}
+
+PUBLISHED PAPER:
+{paper[:3000]}
+
+PREPRINT (if available):
+{preprint_text}
+
+Check for:
+1. Outcome switching (different primary endpoints in paper vs registration)
+2. Sample size inconsistencies -- but a documented, dated DSMB
+   (Data Safety Monitoring Board) early stop with a pre-specified
+   boundary is legitimate and should NOT be flagged
+3. Post-hoc subgroup analyses presented as primary
+4. Implausible p-values or effect sizes
+5. Undisclosed protocol amendments
+
+Respond ONLY with valid JSON:
+{{
+  "integrity_score": 0,
+  "flags": [
+    {{"type": "outcome_switching", "severity": "critical", "description": "one sentence"}}
+  ],
+  "endpoints_match": true,
+  "sample_size_consistent": true,
+  "overall_verdict": "clean",
+  "confidence": "high",
+  "summary": "2-3 sentence assessment"
+}}
+""".strip()
+
+
+def _parse_llm_json(raw):
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        raise IntegrityCheckError(f"LLM did not return valid JSON: {e}\nRaw: {raw[:500]}")
+
+
+def _validate_llm_result(result):
+    required = [
+        "integrity_score", "flags", "endpoints_match",
+        "sample_size_consistent", "overall_verdict", "confidence", "summary",
+    ]
+    missing = [k for k in required if k not in result]
+    if missing:
+        raise IntegrityCheckError(f"LLM JSON missing required keys: {missing}")
+    if result["overall_verdict"] not in ("clean", "concerns", "suspected_fraud"):
+        raise IntegrityCheckError(f"invalid overall_verdict: {result['overall_verdict']}")
+    if result["confidence"] not in ("high", "medium", "low"):
+        raise IntegrityCheckError(f"invalid confidence: {result['confidence']}")
+
+    score = result["integrity_score"]
+    if not isinstance(score, (int, float)) or isinstance(score, bool):
+        raise IntegrityCheckError(f"integrity_score must be numeric, got {type(score).__name__}")
+    if not (0 <= score <= 100):
+        raise IntegrityCheckError(f"integrity_score out of range 0-100: {score}")
+
+    if not isinstance(result["flags"], list):
+        raise IntegrityCheckError("flags must be a list")
+    valid_types = {"outcome_switching", "sample_size_discrepancy", "p_hacking", "undisclosed_amendment", "other"}
+    valid_severities = {"critical", "moderate", "minor"}
+    for i, flag in enumerate(result["flags"]):
+        if not isinstance(flag, dict):
+            raise IntegrityCheckError(f"flags[{i}] must be an object")
+        flag_missing = [k for k in ("type", "severity", "description") if k not in flag]
+        if flag_missing:
+            raise IntegrityCheckError(f"flags[{i}] missing keys: {flag_missing}")
+        if flag["type"] not in valid_types:
+            raise IntegrityCheckError(f"flags[{i}] invalid type: {flag['type']}")
+        if flag["severity"] not in valid_severities:
+            raise IntegrityCheckError(f"flags[{i}] invalid severity: {flag['severity']}")
+
+    if not isinstance(result["endpoints_match"], bool):
+        raise IntegrityCheckError("endpoints_match must be a boolean")
+    if not isinstance(result["sample_size_consistent"], bool):
+        raise IntegrityCheckError("sample_size_consistent must be a boolean")
+
+
 class _DocumentTextExtractor(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -1058,7 +1154,6 @@ class GenLayerCliGateway:
         publication_snapshot: str,
         preprint_snapshot: str,
     ) -> str:
-        from medichain_contract import _build_prompt, _parse_llm_json, _validate_llm_result
         from mock_llm import mock_llm_client
 
         trial = self.get_trial(trial_id)
