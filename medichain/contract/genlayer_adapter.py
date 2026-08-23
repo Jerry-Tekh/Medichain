@@ -461,6 +461,7 @@ class MediChain(gl.Contract):
         current_registry_snapshot_json: str,
         publication_snapshot_json: str,
         preprint_snapshot_json: str,
+        integrity_result_json: str,
     ) -> None:
         self._require_owner()
         self._require_trial(trial_id)
@@ -497,38 +498,7 @@ class MediChain(gl.Contract):
         elif preprint_snapshot_json.strip():
             _fail("[EXPECTED] preprint snapshot requires a preprint URL")
 
-        def run_integrity_analysis() -> dict:
-            prompt = _build_integrity_prompt(
-                protocol_snapshot,
-                current_registry,
-                hypothesis,
-                endpoints_json,
-                expected_n,
-                paper,
-                preprint_text,
-            )
-            response = gl.nondet.exec_prompt(
-                prompt,
-                response_format="json",
-            )
-            if not isinstance(response, dict):
-                _fail("[LLM_ERROR] integrity analysis must return a JSON object")
-            return _parse_integrity_result(response)
-
-        def validate_integrity_analysis(leader_result: gl.vm.Result) -> bool:
-            if not isinstance(leader_result, gl.vm.Return):
-                return False
-            try:
-                leader = _parse_integrity_result(leader_result.calldata)
-                validator = run_integrity_analysis()
-            except Exception:
-                return False
-            return _integrity_results_equivalent(leader, validator)
-
-        result = gl.vm.run_nondet_unsafe(
-            run_integrity_analysis,
-            validate_integrity_analysis,
-        )
+        result = _parse_integrity_result(integrity_result_json)
         flags_json = json.dumps(result["flags"])
 
         self.report_exists[report_id] = True
