@@ -1126,14 +1126,6 @@ class GenLayerCliGateway:
                     "preprint",
                 )
 
-            integrity_result_json = self._compute_integrity_result(
-                trial_id,
-                publication_url,
-                preprint_url,
-                publication_snapshot,
-                preprint_snapshot,
-            )
-
             self.write("submit_results", [
                 trial_id,
                 report_id,
@@ -1142,32 +1134,8 @@ class GenLayerCliGateway:
                 current_registry_snapshot,
                 publication_snapshot,
                 preprint_snapshot,
-                integrity_result_json,
             ])
             return self.get_report(report_id)
-
-    def _compute_integrity_result(
-        self,
-        trial_id: str,
-        publication_url: str,
-        preprint_url: str,
-        publication_snapshot: str,
-        preprint_snapshot: str,
-    ) -> str:
-        from mock_llm import mock_llm_client
-
-        trial = self.get_trial(trial_id)
-        current_registry = self._fetch_protocol_snapshot(
-            str(trial.get("registry_url", ""))
-        )
-        paper = publication_snapshot
-        preprint_text = preprint_snapshot if preprint_url else ""
-
-        prompt = _build_prompt(trial, current_registry, paper, preprint_text)
-        raw_response = mock_llm_client(prompt)
-        result = _parse_llm_json(raw_response)
-        _validate_llm_result(result)
-        return json.dumps(result)
 
     def resolve_appeal(self, trial_id, decision, resolver):
         with self._write_lock:
